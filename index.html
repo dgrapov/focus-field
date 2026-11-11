@@ -1,0 +1,971 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Focus Field</title>
+<meta name="description" content="A live random stream split between 2 to 8 poles. Focus on one and see whether the stream leans your way.">
+<style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: two columns. Left: focus controls, the live field (its tuning folds open beneath it), then trials and session numbers (focus session, trials with its setup beside Start, numbers, tuning).
+   Right: a 2-column plot grid; minimized plots wait in a dock and the rest re-flow to fill; drag titles to swap; expand any plot full screen.
+   Then the session report and history.
+   Single dark world on purpose (matches the GOD 2.0 visualizer). */
+:root{
+  --bg:#07080F; --panel:#0F1220; --line:#232842; --fg:#E6E9F5; --muted:#8A90AE;
+  --one:#19E6FF; --zero:#FF5A2E; --gold:#FFC23A; --ok:#B6FF3B; --rec:#FF3B5C;
+  --display:"Unbounded",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  color-scheme:dark;
+}
+html,body{background:var(--bg);color:var(--fg)}
+[hidden]{display:none!important}
+body{font-family:var(--body);font-size:15px;line-height:1.5;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:1640px;margin:0 auto;display:grid;gap:14px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px}
+.nav{display:flex;gap:8px;font-size:13px;color:var(--muted);margin-top:4px}
+.nav a{color:var(--gold);text-decoration:none}
+.nav a:hover{text-decoration:underline}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(22px,4vw,32px);letter-spacing:.02em;margin:0}
+h1 b{color:var(--one);font-weight:700} h1 i{color:var(--zero);font-style:normal}
+.sub{color:var(--muted);margin:4px 0 0;max-width:64ch;font-size:14px}
+.main{display:grid;gap:14px;grid-template-columns:minmax(0,1fr);align-items:start}
+@media (min-width:1000px){.main{grid-template-columns:minmax(360px,520px) minmax(0,1fr)}}
+.left{display:grid;gap:10px;min-width:0}
+/* collapsible control groups */
+details.grp{background:var(--panel);border:1px solid var(--line);border-radius:14px;min-width:0}
+details.grp>summary{list-style:none;cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:10px 12px}
+details.grp>summary::-webkit-details-marker{display:none}
+details.grp>summary::before{content:"";width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .15s;margin-right:2px;flex:none}
+details.grp[open]>summary::before{transform:rotate(45deg)}
+details.grp.nest{background:none;border-style:dashed;border-radius:10px;width:100%;justify-self:stretch;margin-top:6px}
+details.grp.nest>summary{padding:8px 10px}
+.gt{font:700 13px var(--display);letter-spacing:.05em;color:var(--fg)}
+.gs{font:12px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.gb{display:grid;gap:14px;padding:0 14px 14px;min-width:0}
+.trun{font:500 12px var(--mono);color:var(--gold)}
+.disp .row>div{min-width:0}
+.sub2{font:600 11px var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--gold);margin:0}
+input[type=range]{accent-color:var(--gold);width:130px}
+input[type=color]{width:38px;height:30px;padding:0;border:1px solid var(--line);border-radius:6px;background:none;vertical-align:middle}
+/* plots: a 2-column grid; minimized plots move to the dock and the rest re-flow; drag a title onto another plot to swap */
+.right{display:flex;flex-direction:column;gap:8px;min-width:0}
+@media (min-width:1000px){.right{position:sticky;top:12px;height:calc(100vh - 32px);height:calc(100dvh - 32px)}}
+.dock{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:26px}
+.dock .lab{margin:0}
+.chip{background:var(--panel);border:1px dashed var(--line);color:var(--fg);border-radius:999px;padding:3px 10px;font:500 12px var(--body);cursor:pointer}
+.chip:hover{border-color:var(--gold);color:var(--gold)}
+.hint{font:12px var(--body);color:var(--muted);margin-left:auto}
+.plots{display:grid;gap:10px;grid-template-columns:minmax(0,1fr);min-width:0}
+@media (min-width:1000px){.plots{flex:1;min-height:0;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-auto-rows:minmax(0,1fr)}.plot.wide{grid-column:1/-1}.plots.one{grid-template-columns:minmax(0,1fr)}}
+.plot{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 12px 10px;display:flex;flex-direction:column;gap:4px;min-height:0;min-width:0;transition:border-color .12s}
+.plot.min{display:none}
+.plot.drop{border-color:var(--gold)}
+.plot.dragging{opacity:.45}
+.ph{display:flex;align-items:baseline;gap:10px;min-width:0;cursor:grab}
+.ph:active{cursor:grabbing}
+.pt{font:700 12px var(--display);letter-spacing:.05em;white-space:nowrap}
+.ps{font:12px var(--body);color:var(--muted);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pbtn{background:none;border:1px solid var(--line);color:var(--muted);border-radius:6px;width:28px;height:24px;font:600 13px var(--mono);cursor:pointer;flex:none;align-self:center}
+.pbtn:hover{color:var(--fg);border-color:var(--muted)}
+.pb{position:relative;flex:1;min-height:60px;height:200px}
+@media (min-width:1000px){.pb{height:auto}}
+.pb canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.plot .legend{margin-top:2px;font-size:12px}
+.pset{display:flex;flex-wrap:wrap;gap:8px 14px;padding:6px 0 4px;border-bottom:1px dashed var(--line)}
+.pset .lab{margin-bottom:3px}
+.pbtn[aria-expanded="true"]{color:var(--gold);border-color:var(--gold)}
+#ov{position:fixed;inset:0;z-index:50;background:rgba(7,8,15,.88);display:flex;padding:calc(16px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+#ov .plot{flex:1}
+#ov .pb{height:auto}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.field{display:grid;gap:6px;justify-items:center;align-content:start}
+canvas#circle{width:100%;max-width:440px;aspect-ratio:1;display:block}
+.cue{font-family:var(--display);font-size:clamp(16px,2.6vw,22px);text-align:center;min-height:1.6em;margin:0}
+.cue.rest{color:var(--muted)} .cue.one{color:var(--one)} .cue.zero{color:var(--zero)}
+.bar{width:100%;max-width:440px;height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+.bar>div{height:100%;width:0;background:var(--gold)}
+.ctl{display:grid;gap:14px;align-content:start}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.lab{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;flex-wrap:wrap}
+.seg button{background:none;border:0;color:var(--fg);font:500 13px var(--body);padding:8px 12px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:#1C2140;color:var(--gold)}
+.tabs button{font:600 14px var(--body);padding:9px 16px}
+.dot{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-1px;margin-right:6px}
+button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+select,input[type=file]{background:#0A0C18;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:13px var(--body);max-width:100%}
+.btn{background:var(--gold);color:#140E00;border:0;border-radius:10px;padding:10px 16px;font:600 14px var(--body);cursor:pointer}
+.btn.ghost{background:none;color:var(--fg);border:1px solid var(--line)}
+.btn.rec{background:var(--rec);color:#fff}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.small{padding:5px 10px;font-size:12px}
+.state{display:inline-flex;align-items:center;gap:8px;font:500 13px var(--mono);color:var(--muted)}
+.state i{width:10px;height:10px;border-radius:50%;background:var(--line)}
+.state.on i{background:var(--rec);animation:pulse 1.2s infinite}
+.state.on{color:var(--fg)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,59,92,.6)}100%{box-shadow:0 0 0 10px rgba(255,59,92,0)}}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.stats.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.stats.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.msg:empty{display:none}
+.gb .stat .v{font-size:17px}
+@media (max-width:520px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.stat{border-top:1px solid var(--line);padding-top:8px;min-width:0}
+.stat .k{font-size:12px;color:var(--muted)}
+.stat .v{font:500 19px var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat .s{font:12px var(--mono);color:var(--muted)}
+.chart canvas{width:100%;display:block}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--muted);margin-top:8px}
+.legend span::before{content:"";display:inline-block;width:14px;height:8px;margin-right:6px;vertical-align:middle;background:var(--c);border-radius:2px}
+details{color:var(--muted);font-size:14px}
+details summary{cursor:pointer;color:var(--fg)}
+details p{max-width:72ch}
+details.tune{border:1px solid var(--line);border-radius:10px;padding:8px 12px;color:var(--fg);font-size:14px}
+details.tune summary{color:var(--muted);font-size:13px}
+details.tune[open] summary{margin-bottom:10px}
+.mono{font-family:var(--mono)}
+kbd{font:11px var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--muted)}
+.msg{min-height:1.4em;font-size:13px;color:var(--ok)}
+.report{display:grid;gap:14px}
+.verdict{font-family:var(--display);font-size:clamp(16px,2.4vw,20px);margin:0}
+.verdict.chance{color:var(--muted)} .verdict.notable{color:var(--gold)} .verdict.strong{color:var(--ok)}
+.seed{font:13px var(--mono);word-break:break-all;background:#0A0C18;border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--fg)}
+.hist{overflow-x:auto}
+table.h{border-collapse:collapse;width:100%;font:13px var(--mono);font-variant-numeric:tabular-nums}
+table.h th{font:500 12px var(--body);color:var(--muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.h td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+@media (prefers-reduced-motion:reduce){.state.on i{animation:none}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+  <div class="main">
+    <div class="left">
+      <header>
+        <div>
+          <h1>Focus Field <b>1</b>·<i>0</i></h1>
+            <nav class="nav"><a href="about.html">The idea &amp; how to test it</a><span aria-hidden="true">·</span><a href="https://github.com/dgrapov/focus-field">Source</a></nav>
+        </div>
+      </header>
+
+      <details class="grp" id="g-focus" open>
+        <summary><span class="gt">Focus</span><button class="btn rec small" id="fStart">Start</button><button class="btn ghost small" id="fStop" disabled>Pause</button><button class="btn small" id="fFinish" disabled title="Analyse this session, save it to history and make its seed">Finish &amp; analyse</button><button class="btn ghost small" id="fReset">Discard</button><span class="state" id="fState"><i></i><span>ready</span></span><span class="gs" id="g-focus-s"></span></summary>
+        <div class="gb" id="focusCtl">
+          <div class="row" style="align-items:flex-start;gap:12px 22px">
+          <div>
+            <span class="lab" id="lab-focus">I'm focusing on <span id="keysHint"></span> <kbd>N</kbd> · switch any time</span>
+            <div class="seg" role="group" aria-labelledby="lab-focus" id="focusSeg"></div>
+          </div>
+          <div>
+            <span class="lab" id="lab-poles">Poles</span>
+            <div class="seg" role="group" aria-labelledby="lab-poles" id="polesSeg"></div>
+          </div>
+          </div>
+          <div class="msg" id="fMsg" role="status"></div>
+        </div>
+      </details>
+
+
+
+      <section class="panel field" aria-label="Live field">
+        <p id="cue" class="cue rest">Live stream</p>
+        <canvas id="circle" width="960" height="960" aria-label="Live field: a circle at 2 poles, a radar at 3 or more"></canvas>
+        <div class="bar" aria-hidden="true"><div id="prog"></div></div>
+        <div class="row mono" style="font-size:13px;color:var(--muted);justify-content:center"><span id="live">—</span><span aria-hidden="true">·</span><span id="rate">0/s</span><span aria-hidden="true">·</span><span id="lastBlk">block —</span></div>
+        <details class="grp nest disp" id="g-tune">
+          <summary><span class="gt">Tuning</span><span class="gs">window, block votes, bubbles, orb</span></summary>
+          <div class="gb">
+            <p class="sub2">Windows</p>
+            <div class="row">
+              <div><label class="lab" for="win">Field window</label>
+                <select id="win"><option value="1">1 s</option><option value="3" selected>3 s</option><option value="10">10 s</option><option value="30">30 s</option></select></div>
+            </div>
+            <p class="sub2">Block votes</p>
+            <div class="row">
+              <div><label class="lab" for="dBlk">Block size</label><select id="dBlk"><option value="10">10 draws (50/s)</option><option value="25">25 draws (20/s)</option><option value="50">50 draws (10/s)</option><option value="100">100 draws (5/s)</option><option value="250">250 draws (2/s)</option><option value="500">500 draws (1/s)</option></select></div>
+              <div><label class="lab" for="dBmode">Bubbles</label><select id="dBmode"><option value="blocks">Real: one per winning block</option><option value="deco">Decorative sparkle</option><option value="off">Off</option></select></div>
+            </div>
+            <div class="row" id="blkOpts">
+              <div><label class="lab" for="dBplace">Bubbles move</label><select id="dBplace"><option value="drift">Drift to the winner's pole</option><option value="scatter">Stay where they appear</option></select></div>
+              <div><label class="lab" for="dBmin">Show blocks won at</label><select id="dBmin"><option value="0">Any margin</option><option value="1">z ≥ 1 (about 1 in 6)</option><option value="1.5">z ≥ 1.5</option><option value="2">z ≥ 2 (about 1 in 40)</option></select></div>
+              <div><label class="lab" for="dBlife">Fade after</label><select id="dBlife"><option value="1">1 s</option><option value="3">3 s</option><option value="8">8 s</option></select></div>
+              <div><label class="lab" for="dPulse">Ring pulse on a win</label><select id="dPulse"><option value="0">Off</option><option value="1">On</option></select></div>
+            </div>
+            <div class="row">
+              <div><label class="lab" for="dBubSz">Bubble size</label><input type="range" id="dBubSz" min="20" max="200" step="10"></div>
+              <div id="decoAmt"><label class="lab" for="dBub">Sparkle amount <span id="dBubV" class="mono"></span></label><input type="range" id="dBub" min="0" max="100" step="5"></div>
+            </div>
+            <p class="sub2">2 poles · circle</p>
+            <div class="row">
+              <div><label class="lab" for="dWave">Waterline</label><select id="dWave"><option value="1">Moving</option><option value="0">Still</option></select></div>
+              <div><label class="lab" for="dTicks">z scale</label><select id="dTicks"><option value="1">Shown</option><option value="0">Hidden</option></select></div>
+              <div><label class="lab" for="dVig">Edge shade</label><select id="dVig"><option value="1">On</option><option value="0">Off</option></select></div>
+            </div>
+            <p class="sub2">3+ poles · radar orb</p>
+            <div class="row">
+              <div><label class="lab" for="dOrb">Orb color</label><select id="dOrb"><option value="lean">Shifts with the lean</option><option value="pole">Nearest pole's color</option><option value="one">One color</option></select></div>
+              <div><label class="lab" for="dOrbC">Color</label><input type="color" id="dOrbC"></div>
+              <div><label class="lab" for="dTrail">Orb trail</label><select id="dTrail"><option value="1">On</option><option value="0">Off</option></select></div>
+            </div>
+            <div class="row"><button class="btn ghost small" id="dCalm">Calm preset</button><button class="btn ghost small" id="dReset">Defaults</button></div>
+          </div>
+        </details>
+      </section>
+
+      <details class="grp" id="g-trials" open>
+        <summary><span class="gt">Trials</span><button class="btn small" id="start">Start run</button><button class="btn ghost small" id="stop" disabled>Stop</button><span class="trun" id="tRun" role="status"></span><span class="gs" id="tq">0 focus trials</span></summary>
+        <div class="gb" id="trialCtl">
+          <div class="row" style="align-items:flex-end;gap:12px 16px">
+          <div>
+            <span class="lab" id="lab-mode">Target</span>
+            <div class="seg" role="group" aria-labelledby="lab-mode" id="mode">
+              <button data-m="random" aria-pressed="true">Random 1 / 0</button>
+              <button data-m="one" aria-pressed="false">Always 1</button>
+              <button data-m="zero" aria-pressed="false">Always 0</button>
+              <button data-m="control" aria-pressed="false">Control</button>
+            </div>
+          </div>
+          <div class="row" style="align-items:flex-end">
+            <div><label class="lab" for="len">Trial length</label>
+              <select id="len"><option value="5">5 s</option><option value="10" selected>10 s</option><option value="20">20 s</option></select></div>
+            <div><label class="lab" for="count">Trials per run</label>
+              <select id="count"><option>5</option><option selected>10</option><option>20</option></select></div>
+            <div><label class="lab" for="fb">Feedback</label>
+              <select id="fb"><option value="on" selected>Live</option><option value="off">Hidden until trial ends</option></select></div>
+          </div>
+          </div>
+          <div class="stats four">
+            <div class="stat"><div class="k">Focus trials</div><div class="v" id="s-n">0</div><div class="s" id="s-bits">0 bits</div></div>
+            <div class="stat"><div class="k">Hit rate</div><div class="v" id="s-hit">—</div><div class="s">chance 50%</div></div>
+            <div class="stat"><div class="k">Focus z</div><div class="v" id="s-z">—</div><div class="s" id="s-p">p —</div></div>
+            <div class="stat"><div class="k">Control z</div><div class="v" id="s-cz">—</div><div class="s" id="s-cn">0 control trials</div></div>
+          </div>
+          <div class="row">
+            <button class="btn ghost small" id="copy">Copy results</button>
+            <button class="btn ghost small" id="reset">Clear log</button>
+            <span id="toast2" class="msg" role="status"></span>
+          </div>
+        </div>
+      </details>
+
+      <details class="grp" id="g-stats" open>
+        <summary><span class="gt">Session numbers</span><span class="gs" id="g-stats-s"></span></summary>
+        <div class="gb">
+          <div class="stats four">
+        <div class="stat"><div class="k">Recording time</div><div class="v" id="f-time">0:00</div><div class="s" id="f-n">0 draws</div></div>
+        <div class="stat"><div class="k">Leading now (per second)</div><div class="v" id="f-now">—</div><div class="s" id="f-streak">streak —</div></div>
+        <div class="stat"><div class="k">Changes of leader</div><div class="v" id="f-flips">0</div><div class="s" id="f-fliprate">— per min</div></div>
+        <div class="stat"><div class="k">Toward my goal</div><div class="v" id="f-gz" style="color:var(--gold)">—</div><div class="s" id="f-gp">p —</div></div>
+        <div class="stat"><div class="k">Hit rate on goal</div><div class="v" id="f-hit">—</div><div class="s" id="f-chance">chance —</div></div>
+        <div class="stat"><div class="k">Focus time</div><div class="v" id="f-fs">0 s</div><div class="s" id="f-sw">0 goal switches</div></div>
+        <div class="stat"><div class="k">Block votes for goal</div><div class="v" id="f-bv">—</div><div class="s" id="f-bvs">chance —</div></div>
+        <div class="stat"><div class="k">Goal block z</div><div class="v" id="f-bz" style="color:var(--gold)">—</div><div class="s" id="f-bzs">p —</div></div>
+      </div>
+          <div id="f-per" class="row" style="font:12px var(--mono);color:var(--muted)"></div>
+        </div>
+      </details>
+    </div>
+
+    <div class="right">
+    <div class="dock" id="dock"></div>
+    <div class="plots" id="plots">
+      <section class="plot" id="p-jit" style="--g:1.1" aria-label="Jitter">
+        <div class="ph" draggable="true" title="Drag onto another plot to swap"><span class="pt">Jitter</span><span class="ps" id="jLab">real time · lean of each pole, last 20 s</span><button class="pbtn" data-act="set" aria-expanded="false" aria-controls="jitSet" title="Live graph settings">⚙</button><button class="pbtn" data-act="mv" title="Move earlier">◀</button><button class="pbtn" data-act="min" title="Minimize to the dock">–</button><button class="pbtn" data-act="exp" title="Expand">⤢</button></div>
+        <div class="pset" id="jitSet" hidden>
+          <div><label class="lab" for="jwin">Smoothing window</label><select id="jwin"><option value="0.2">0.2 s</option><option value="0.5" selected>0.5 s</option><option value="1">1 s</option><option value="2">2 s</option></select></div>
+          <div><label class="lab" for="jspan">Time shown</label><select id="jspan"><option value="10">10 s</option><option value="20">20 s</option><option value="30">30 s</option><option value="60">60 s</option></select></div>
+          <div><label class="lab" for="jy">Height</label><select id="jy"><option value="2">±2 sd</option><option value="3.2">±3.2 sd</option><option value="5">±5 sd</option><option value="auto">Fit to data</option></select></div>
+          <div><label class="lab" for="jline">Line</label><select id="jline"><option value="fill">Filled</option><option value="line">Line only</option></select></div>
+        </div>
+        <div class="pb"><canvas id="jitter" aria-label="Jitter trace of the last 20 seconds"></canvas></div>
+      </section>
+      <section class="plot" id="p-vote" style="--g:1" aria-label="Block votes">
+        <div class="ph" draggable="true" title="Drag onto another plot to swap"><span class="pt">Block votes</span><span class="ps" id="vLab">recent blocks · colour = winner</span><button class="pbtn" data-act="set" aria-expanded="false" aria-controls="voteSet" title="Block vote settings">⚙</button><button class="pbtn" data-act="mv" title="Move earlier">◀</button><button class="pbtn" data-act="min" title="Minimize to the dock">–</button><button class="pbtn" data-act="exp" title="Expand">⤢</button></div>
+        <div class="pset" id="voteSet" hidden>
+          <div><label class="lab" for="vShow">Blocks shown</label><select id="vShow"><option value="60">60</option><option value="120">120</option><option value="240">240</option><option value="480">480</option></select></div>
+          <div><label class="lab" for="vShade">Brightness</label><select id="vShade"><option value="1">By margin of win</option><option value="0">Flat</option></select></div>
+          <div><label class="lab" for="vBlk2">Block size</label><select id="vBlk2"><option value="10">10 draws</option><option value="25">25 draws</option><option value="50">50 draws</option><option value="100">100 draws</option><option value="250">250 draws</option><option value="500">500 draws</option></select></div>
+        </div>
+        <div class="pb"><canvas id="votes" aria-label="Recent block votes and each pole's share of them"></canvas></div>
+      </section>
+      <section class="plot" id="p-bars" style="--g:.6" aria-label="Leader share">
+        <div class="ph" draggable="true" title="Drag onto another plot to swap"><span class="pt">Leader share</span><span class="ps">share of seconds each pole led · dashed = chance</span><button class="pbtn" data-act="mv" title="Move earlier">◀</button><button class="pbtn" data-act="min" title="Minimize to the dock">–</button><button class="pbtn" data-act="exp" title="Expand">⤢</button></div>
+        <div class="pb"><canvas id="bars"></canvas></div>
+      </section>
+      <section class="plot" id="p-rib" style="--g:.75" aria-label="Pole over time">
+        <div class="ph" draggable="true" title="Drag onto another plot to swap"><span class="pt">Per second</span><span class="ps">leader each second · top band = goal · white tick = matched</span><button class="pbtn" data-act="mv" title="Move earlier">◀</button><button class="pbtn" data-act="min" title="Minimize to the dock">–</button><button class="pbtn" data-act="exp" title="Expand">⤢</button></div>
+        <div class="pb"><canvas id="ribbon"></canvas></div>
+      </section>
+      <section class="plot" id="p-dfoc" style="--g:1.3" aria-label="Focus deflection">
+        <div class="ph" draggable="true" title="Drag onto another plot to swap"><span class="pt">Over time</span><span class="ps" id="chartLab">draws toward your goal</span><button class="pbtn" data-act="mv" title="Move earlier">◀</button><button class="pbtn" data-act="min" title="Minimize to the dock">–</button><button class="pbtn" data-act="exp" title="Expand">⤢</button></div>
+        <div class="pb"><canvas id="chart"></canvas></div>
+        <div class="legend" id="chartLeg"></div>
+      </section>
+      <section class="plot" id="p-dtri" style="--g:1" aria-label="Trials deflection">
+        <div class="ph" draggable="true" title="Drag onto another plot to swap"><span class="pt">Trials</span><span class="ps" id="tchartLab">cumulative hits minus chance</span><button class="pbtn" data-act="mv" title="Move earlier">◀</button><button class="pbtn" data-act="min" title="Minimize to the dock">–</button><button class="pbtn" data-act="exp" title="Expand">⤢</button></div>
+        <div class="pb"><canvas id="tchart"></canvas></div>
+        <div class="legend" id="tchartLeg"></div>
+      </section>
+    </div>
+    </div>
+  </div>
+  <div id="ov" hidden></div>
+
+  <section class="panel report" id="reportPanel" aria-label="Session report" hidden>
+    <div class="row" style="justify-content:space-between"><span class="lab" style="margin:0">Session report</span><span class="mono" id="r-when" style="font-size:12px;color:var(--muted)"></span></div>
+    <p class="verdict" id="r-verdict"></p>
+    <div class="stats" id="r-stats"></div>
+    <div>
+      <span class="lab">Seed from this session (SHA-256 of the raw stream, your focus marks and the start time)</span>
+      <div class="seed" id="r-seed"></div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost small" id="r-copyseed">Copy seed</button><button class="btn ghost small" id="r-copyshort">Copy short seed</button><button class="btn ghost small" id="r-copyall">Copy full report</button><span class="msg" id="r-msg" role="status"></span></div>
+    </div>
+  </section>
+
+  <section class="panel hist" id="histPanel" aria-label="History">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px"><span class="lab" style="margin:0">Session history</span><span class="row"><button class="btn ghost small" id="h-copy">Copy history</button><button class="btn ghost small" id="h-clear">Clear history</button></span></div>
+    <table class="h" id="histTable"></table>
+  </section>
+
+  <details>
+    <summary>How to read this, and what it can and can't show</summary>
+    <p><b>The stream.</b> Draws come from the browser's cryptographic generator (<span class="mono">crypto.getRandomValues</span>), 500 a second, each landing on one of the poles with equal chance. It is seeded from your computer's hardware entropy, then expanded by an algorithm; researchers in this area usually prefer a physical source, which could be swapped in later. Bytes are fetched 16 at a time as they are needed, so each outcome is made a few hundredths of a second before it is shown, never stored up in advance. Keep this tab in front while recording, because browsers slow background tabs.</p>
+    <p><b>The field.</b> At 2 poles the circle fills toward cyan (1) or coral (0) by the z-score of the last few seconds; a quarter of the way up is about z = 1. At 3 or more poles each spoke of the radar shows how far that pole is above or below chance (the solid ring is chance, the dashed rings are ±2), and the glowing orb is pulled toward whichever poles the stream favours.</p>
+    <p><b>Jitter</b> is the same lean measured over a short window and drawn continuously, so you can see the wobble between seconds. <b>Changes of leader</b>: pure chance changes the leading pole most seconds (about 30 a minute at 2 poles, about 50 at 6).</p>
+    <p><b>Finish &amp; analyse</b> scores every focus second toward the goal it had at that moment (so switching goals is fine), checks the no-focus seconds against chance, compares streaks and leader changes with what chance predicts, and saves the result to the history. The seed is a SHA-256 hash of the session's raw draws, your focus marks and its start time. The short seed (its first 8 hex digits as a number) can seed other randomness later, such as visualizer stacks or a Strudel pattern.</p>
+    <p><b>The research so far.</b> The Princeton PEAR lab reported a deviation of roughly 1 in 10,000 over many years. A three-lab replication in 2000 did not reproduce it, and a 2006 meta-analysis found a tiny overall effect that publication bias could explain. At that size it would take tens of millions of draws (tens of hours) to show, so single sessions will look like noise either way. Sessions and history are kept in this browser. <a href="about.html" style="color:var(--gold)">More on the idea, the evidence and a protocol to try</a>.</p>
+  </details>
+</div>
+
+<audio id="player" preload="auto"></audio>
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const RATE = 500;
+const css = getComputedStyle(document.documentElement), V = n => css.getPropertyValue(n).trim();
+const COL = { one: V('--one'), zero: V('--zero'), gold: V('--gold'), muted: V('--muted'), line: V('--line') };
+const z = (k, n) => n ? (k - n/2)/Math.sqrt(n/4) : 0;
+function pOne(zv){ const t = 1/(1 + 0.2316419*Math.abs(zv)), d = 0.3989423*Math.exp(-zv*zv/2);
+  const q = d*t*(0.3193815 + t*(-0.3565638 + t*(1.781478 + t*(-1.821256 + t*1.330274)))); return zv >= 0 ? q : 1 - q; }
+const chiP = (x, df) => { if (df <= 0) return 1; const a = 2/(9*df), zz = (Math.cbrt(x/df) - (1 - a))/Math.sqrt(a); return pOne(zz); };   // Wilson-Hilferty
+const sg = v => (v >= 0 ? '+' : '') + v.toFixed(2);
+const mmss = s => Math.floor(s/60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e) { return d; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} };
+function copy(obj, ok, out){ const txt = typeof obj === 'string' ? obj : JSON.stringify(obj); if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => out(ok), () => out('Copy was blocked by this view.')); else out('Copy is not available in this view.'); }
+
+// ---------- display options (per viewer) ----------
+const DISP0 = { bub: 100, bubSz: 100, wave: 1, ticks: 1, vig: 1, orb: 'lean', orbC: '#FFC23A', trail: 1, jwin: 0.5, jspan: 20, jy: '3.2', jline: 'fill', jset: false,
+  blk: 25, bmode: 'blocks', bplace: 'drift', bmin: 0, blife: 3, pulse: 0, vshow: 120, vshade: 1, vset: false };
+let disp = Object.assign({}, DISP0, load('focusfield.disp', {}));
+function applyDispUI(){
+  $('dBub').value = disp.bub; $('dBubV').textContent = disp.bub ? disp.bub + '%' : 'off'; $('dBubSz').value = disp.bubSz;
+  $('dWave').value = String(disp.wave); $('dTicks').value = String(disp.ticks); $('dVig').value = String(disp.vig);
+  $('jwin').value = String(disp.jwin); $('jspan').value = String(disp.jspan); $('jy').value = disp.jy; $('jline').value = disp.jline;
+  $('jitSet').hidden = !disp.jset; document.querySelector('#p-jit [data-act=set]').setAttribute('aria-expanded', String(!!disp.jset)); $('jLab').textContent = `real time · lean of each pole, last ${disp.jspan} s`;
+  $('dBlk').value = String(disp.blk); $('vBlk2').value = String(disp.blk); $('dBmode').value = disp.bmode; $('dBplace').value = disp.bplace; $('dBmin').value = String(disp.bmin); $('dBlife').value = String(disp.blife); $('dPulse').value = String(disp.pulse);
+  $('blkOpts').hidden = disp.bmode !== 'blocks'; $('decoAmt').hidden = disp.bmode !== 'deco';
+  $('vShow').value = String(disp.vshow); $('vShade').value = String(disp.vshade); $('voteSet').hidden = !disp.vset; document.querySelector('#p-vote [data-act=set]').setAttribute('aria-expanded', String(!!disp.vset));
+  $('vLab').textContent = `last ${disp.vshow} blocks of ${disp.blk} draws · colour = winner` + (disp.vshade ? ', brighter = bigger margin' : '');
+  $('dOrb').value = disp.orb; $('dOrbC').value = disp.orbC; $('dOrbC').disabled = disp.orb !== 'one'; $('dTrail').value = String(disp.trail);
+}
+function setDisp(patch){ const oldBlk = disp.blk; Object.assign(disp, patch); save('focusfield.disp', disp); if (disp.blk !== oldBlk) resetBlocks(); if (disp.bmode !== 'blocks') bubs.length = 0; if (disp.bmode !== 'deco' || !disp.bub) recent.length = 0; if (!disp.trail) trail.length = 0; applyDispUI(); }
+$('dBub').addEventListener('input', e => setDisp({ bub: +e.target.value }));
+$('dBubSz').addEventListener('input', e => setDisp({ bubSz: +e.target.value }));
+$('dWave').addEventListener('change', e => setDisp({ wave: +e.target.value }));
+$('dTicks').addEventListener('change', e => setDisp({ ticks: +e.target.value }));
+$('dVig').addEventListener('change', e => setDisp({ vig: +e.target.value }));
+$('dOrb').addEventListener('change', e => setDisp({ orb: e.target.value }));
+$('dOrbC').addEventListener('input', e => setDisp({ orbC: e.target.value }));
+$('dTrail').addEventListener('change', e => setDisp({ trail: +e.target.value }));
+$('jspan').addEventListener('change', e => setDisp({ jspan: +e.target.value }));
+$('jy').addEventListener('change', e => setDisp({ jy: e.target.value }));
+$('jline').addEventListener('change', e => setDisp({ jline: e.target.value }));
+document.querySelector('#p-jit [data-act=set]').addEventListener('click', () => setDisp({ jset: !disp.jset }));
+$('dBlk').addEventListener('change', e => setDisp({ blk: +e.target.value }));
+$('vBlk2').addEventListener('change', e => setDisp({ blk: +e.target.value }));
+$('dBmode').addEventListener('change', e => setDisp({ bmode: e.target.value }));
+$('dBplace').addEventListener('change', e => setDisp({ bplace: e.target.value }));
+$('dBmin').addEventListener('change', e => setDisp({ bmin: +e.target.value }));
+$('dBlife').addEventListener('change', e => setDisp({ blife: +e.target.value }));
+$('dPulse').addEventListener('change', e => setDisp({ pulse: +e.target.value }));
+$('vShow').addEventListener('change', e => setDisp({ vshow: +e.target.value }));
+$('vShade').addEventListener('change', e => setDisp({ vshade: +e.target.value }));
+document.querySelector('#p-vote [data-act=set]').addEventListener('click', () => setDisp({ vset: !disp.vset }));
+$('dCalm').addEventListener('click', () => setDisp({ bmode: 'off', wave: 0, orb: 'one', trail: 0, pulse: 0 }));
+$('dReset').addEventListener('click', () => setDisp({ bmode: DISP0.bmode, bplace: DISP0.bplace, bmin: DISP0.bmin, blife: DISP0.blife, pulse: DISP0.pulse, bub: DISP0.bub, bubSz: DISP0.bubSz, wave: DISP0.wave, ticks: DISP0.ticks, vig: DISP0.vig, orb: DISP0.orb, orbC: DISP0.orbC, trail: DISP0.trail }));
+const hsl2rgb = (h, s, l) => { s /= 100; l /= 100; const a = s*Math.min(l, 1 - l), f = n => { const k = (n + h/30) % 12; return Math.round(255*(l - a*Math.max(-1, Math.min(k - 3, 9 - k, 1)))); }; return [f(0), f(8), f(4)]; };
+const hex2rgb = h => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); const v = m ? parseInt(m[1], 16) : 0xFFC23A; return [v >> 16, (v >> 8) & 255, v & 255]; };
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+function fitText(g, text, x, y, maxW, px){ g.font = `400 ${px}px "IBM Plex Sans", sans-serif`; const w = g.measureText(text).width; if (w > maxW) g.font = `400 ${Math.max(14, Math.floor(px*maxW/w))}px "IBM Plex Sans", sans-serif`; g.fillText(text, x, y); }
+
+// ---------- collapsible groups (open state remembered) ----------
+const gOpen = load('focusfield.groups', {});
+document.querySelectorAll('details.grp').forEach(d => { if (d.id in gOpen) d.open = gOpen[d.id]; d.addEventListener('toggle', () => { gOpen[d.id] = d.open; save('focusfield.groups', gOpen); }); });
+// buttons inside a group's header act without opening or closing the group
+document.querySelectorAll('details.grp > summary button').forEach(b => b.addEventListener('click', e => e.preventDefault()));
+
+// ---------- plot grid: minimize to the dock, others re-flow; swap by dragging or with ◀; expand ----------
+const PNAME = { 'p-vote': 'Block votes', 'p-jit': 'Jitter', 'p-bars': 'Leader share', 'p-rib': 'Per second', 'p-dfoc': 'Over time', 'p-dtri': 'Trials' };
+const P0 = ['p-jit', 'p-vote', 'p-rib', 'p-dfoc', 'p-dtri', 'p-bars'];
+let pOrder = load('focusfield.plotOrder', P0).filter(id => P0.includes(id)); P0.forEach(id => { if (!pOrder.includes(id)) pOrder.push(id); });
+const pMin = load('focusfield.plotsMin2', { 'p-bars': true });
+let expanded = null;
+function layoutPlots(){
+  const grid = $('plots');
+  pOrder.forEach(id => { const el = $(id); if (el !== expanded) grid.appendChild(el); });
+  const vis = pOrder.filter(id => !pMin[id] && $(id) !== expanded);
+  pOrder.forEach(id => { const el = $(id); el.classList.toggle('min', !!pMin[id]); el.classList.remove('wide'); });
+  if (vis.length % 2 === 1 && vis.length > 1) $(vis[0]).classList.add('wide');   // odd count: the first visible plot takes a full row
+  grid.classList.toggle('one', vis.length === 1);
+  const mins = pOrder.filter(id => pMin[id]);
+  $('dock').innerHTML = (mins.length ? '<span class="lab">Minimized</span>' + mins.map(id => `<button class="chip" data-id="${id}" title="Bring back">+ ${PNAME[id]}</button>`).join('') : '') + '<span class="hint">Drag a plot\u2019s title onto another to swap</span>';
+  $('dock').querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => { delete pMin[c.dataset.id]; save('focusfield.plotsMin2', pMin); layoutPlots(); }));
+  save('focusfield.plotOrder', pOrder);
+}
+function swapPlots(a, b){ const i = pOrder.indexOf(a), j = pOrder.indexOf(b); if (i < 0 || j < 0 || i === j) return; [pOrder[i], pOrder[j]] = [pOrder[j], pOrder[i]]; layoutPlots(); }
+function closeExpand(){ if (!expanded) return; expanded.querySelector('[data-act=exp]').textContent = '⤢'; expanded = null; $('ov').hidden = true; layoutPlots(); }
+let dragId = null;
+document.querySelectorAll('.plot').forEach(pl => {
+  pl.querySelector('[data-act=min]').addEventListener('click', () => { if (expanded === pl) closeExpand(); pMin[pl.id] = true; save('focusfield.plotsMin2', pMin); layoutPlots(); });
+  pl.querySelector('[data-act=mv]').addEventListener('click', () => { if (expanded) return; const vis = pOrder.filter(id => !pMin[id]), i = vis.indexOf(pl.id); swapPlots(pl.id, vis[(i - 1 + vis.length) % vis.length]); });
+  pl.querySelector('[data-act=exp]').addEventListener('click', e => {
+    if (expanded === pl) return closeExpand(); closeExpand();
+    expanded = pl; $('ov').appendChild(pl); $('ov').hidden = false; e.currentTarget.textContent = '✕'; layoutPlots();
+  });
+  const ph = pl.querySelector('.ph');
+  ph.addEventListener('dragstart', e => { if (expanded){ e.preventDefault(); return; } dragId = pl.id; pl.classList.add('dragging'); try { e.dataTransfer.setData('text/plain', pl.id); e.dataTransfer.effectAllowed = 'move'; } catch(err) {} });
+  ph.addEventListener('dragend', () => { dragId = null; document.querySelectorAll('.plot').forEach(x => x.classList.remove('dragging', 'drop')); });
+  pl.addEventListener('dragover', e => { if (!dragId || dragId === pl.id) return; e.preventDefault(); pl.classList.add('drop'); });
+  pl.addEventListener('dragleave', e => { if (!pl.contains(e.relatedTarget)) pl.classList.remove('drop'); });
+  pl.addEventListener('drop', e => { e.preventDefault(); pl.classList.remove('drop'); if (dragId && dragId !== pl.id) swapPlots(dragId, pl.id); });
+});
+$('ov').addEventListener('click', e => { if (e.target === $('ov')) closeExpand(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeExpand(); });
+const redrawFor = { votes: () => drawVotes(), jitter: () => {}, bars: () => renderFocus(), ribbon: () => drawRibbon(), chart: () => drawChart(), tchart: () => drawChart() };
+const ro = new ResizeObserver(ents => { for (const en of ents){ const c = en.target.querySelector('canvas'); if (!c) continue; const r = en.contentRect;
+  if (r.width < 10 || r.height < 10) continue; const w = Math.round(r.width*2), h = Math.round(r.height*2); if (c.width === w && c.height === h) continue; c.width = w; c.height = h; try { redrawFor[c.id] && redrawFor[c.id](); } catch(err) {} } });
+
+// ---------- random sources ----------
+let pool = new Uint8Array(0), pi = 0, bitPos = 8, cur8 = 0;
+function bit(){ if (bitPos >= 8){ if (pi >= pool.length){ pool = new Uint8Array(16); crypto.getRandomValues(pool); pi = 0; } cur8 = pool[pi++]; bitPos = 0; } return (cur8 >> bitPos++) & 1; }
+let bpool = new Uint8Array(0), bpi = 0;
+const rbyte = () => { if (bpi >= bpool.length){ bpool = new Uint8Array(16); crypto.getRandomValues(bpool); bpi = 0; } return bpool[bpi++]; };
+
+// ---------- poles ----------
+const POLES = [2, 3, 4, 5, 6, 8];
+let K = load('focusfield.K', 2); if (!POLES.includes(K)) K = 2;
+const pHue = k => (190 + k*360/K) % 360;
+const pCol = (k, a = 1) => K === 2 ? (k === 0 ? (a === 1 ? COL.one : `rgba(25,230,255,${a})`) : (a === 1 ? COL.zero : `rgba(255,90,46,${a})`)) : `hsla(${pHue(k)},95%,${K > 6 && k % 2 ? 66 : 58}%,${a})`;
+const pName = k => K === 2 ? (k === 0 ? '1' : '0') : String(k + 1);
+const pAng = k => -Math.PI/2 + k*2*Math.PI/K;
+function drawSym(){ if (K === 2) return 1 - (rbyte() & 1); const lim = Math.floor(256/K)*K; let v; do { v = rbyte(); } while (v >= lim); return v % K; }   // K=2: pole 0 = bit 1
+
+// ---------- live windows over a 30 s ring buffer ----------
+const BUF = RATE*30, buf = new Uint8Array(BUF); let bi = 0, fill = 0;
+const fw = { N: RATE*3, c: new Array(8).fill(0) }, jw = { N: Math.round((disp.jwin || 0.5)*RATE), c: new Array(8).fill(0) };
+function recalc(w){ w.c.fill(0); const n = Math.min(w.N, fill); for (let k = 1; k <= n; k++) w.c[buf[(bi - k + BUF) % BUF]]++; }
+// ---------- block votes: every disp.blk draws make one vote for the pole that won the block ----------
+// A block's margin is the winner's one-vs-rest z. Tied blocks (two poles share the top count) are no vote.
+// Session tally counts only untied blocks recorded while a goal is set; among untied blocks each pole wins with chance 1/K.
+const blk = { c: new Array(8).fill(0), n: 0 }, blocks = [], bubs = [], pulse = { k: -1, a: 0 };
+let lastBlock = null, sb = { n: 0, w: 0, ties: 0 };
+function resetBlocks(){ blk.c.fill(0); blk.n = 0; blocks.length = 0; bubs.length = 0; lastBlock = null; }
+function finishBlock(){
+  const n = blk.n, p = 1/K; let w = 0, tie = false;
+  for (let k = 1; k < K; k++){ if (blk.c[k] > blk.c[w]){ w = k; tie = false; } else if (blk.c[k] === blk.c[w]) tie = true; }
+  const zz = (blk.c[w] - n*p)/Math.sqrt(n*p*(1 - p)), g = recording && focus >= 0 ? focus : -1;
+  const b = { w: tie ? -1 : w, z: zz, g }; blocks.push(b); if (blocks.length > 1000) blocks.shift(); lastBlock = b;
+  if (g >= 0){ if (tie) sb.ties++; else { sb.n++; if (w === g) sb.w++; } }
+  if (!tie && zz >= disp.bmin && !run){
+    if (disp.bmode === 'blocks') spawnBubble(w, zz);
+    if (disp.pulse) { pulse.k = w; pulse.a = Math.min(1, .35 + zz*.25); }
+  }
+  blk.c.fill(0); blk.n = 0;
+}
+function spawnBubble(k, zz){
+  const a0 = Math.random()*Math.PI*2, r0 = Math.sqrt(Math.random())*0.85;   // placement is decoration; colour, size and timing are the data
+  let tx, ty;
+  if (K === 2){ tx = (Math.random()*2 - 1)*0.55; ty = (k === 0 ? 1 : -1)*(0.25 + Math.random()*0.55); }   // pole 1 (cyan) fills from the bottom
+  else { const a = pAng(k) + (Math.random() - .5)*(Math.PI/K), r = 0.55 + Math.random()*0.32; tx = Math.cos(a)*r; ty = Math.sin(a)*r; }
+  bubs.push({ k, z: zz, x: Math.cos(a0)*r0, y: Math.sin(a0)*r0, tx, ty, born: performance.now() });
+  if (bubs.length > 600) bubs.shift();
+}
+function drawBubbles(C, R){
+  if (disp.bmode !== 'blocks' || run) return;
+  const now = performance.now(), life = disp.blife*1000, bs = disp.bubSz/100;
+  for (const b of bubs){
+    const age = (now - b.born)/life; if (age >= 1) continue;
+    if (disp.bplace === 'drift'){ b.x += (b.tx - b.x)*0.05; b.y += (b.ty - b.y)*0.05; }
+    const rad = (5 + 7*Math.min(3, b.z))*bs*(1 - age*0.35), al = 1 - age*age;
+    cx.globalAlpha = al; cx.beginPath(); cx.arc(C + b.x*R, C + b.y*R, rad, 0, Math.PI*2);
+    cx.fillStyle = K === 2 ? (b.k === 0 ? '#E9FDFF' : '#FFE9E2') : pCol(b.k); cx.fill();
+    cx.lineWidth = 2.5; cx.strokeStyle = K === 2 ? (b.k === 0 ? '#0A6F80' : '#9A2E12') : 'rgba(6,7,13,.55)'; cx.stroke();
+  }
+  cx.globalAlpha = 1;
+  const t = performance.now(); for (let i = bubs.length - 1; i >= 0; i--) if (t - bubs[i].born > life) bubs.splice(i, 1);
+}
+function drawPulse(C, R){
+  if (!disp.pulse || pulse.k < 0 || pulse.a < 0.02) return;
+  if (K === 2){ cx.lineWidth = 12; cx.strokeStyle = pCol(pulse.k, pulse.a); cx.beginPath(); cx.arc(C, C, R + 24, 0, Math.PI*2); cx.stroke(); }
+  else { const a = pAng(pulse.k), dx = C + Math.cos(a)*(R + 26), dy = C + Math.sin(a)*(R + 26); cx.lineWidth = 6; cx.strokeStyle = pCol(pulse.k, pulse.a); cx.beginPath(); cx.arc(dx, dy, 30 + 14*(1 - pulse.a), 0, Math.PI*2); cx.stroke(); }
+  pulse.a *= 0.9;
+}
+const vc = $('votes'), vx = vc.getContext('2d');
+function drawVotes(){
+  const W = vc.width, H = vc.height; vx.clearRect(0, 0, W, H); if (W < 20 || H < 20) return;
+  const N = disp.vshow, list = blocks.slice(-N), gridH = Math.max(40, H*0.58), barTop = gridH + 18, barH = H - barTop - 34;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(N*W/gridH))), rows = Math.ceil(N/cols), cell = Math.min(W/cols, gridH/rows), gx = (W - cols*cell)/2;
+  vx.fillStyle = '#0A0C18'; vx.fillRect(gx, 0, cols*cell, rows*cell);
+  list.forEach((b, i) => { const x = gx + (i % cols)*cell, y = Math.floor(i/cols)*cell;
+    vx.fillStyle = b.w < 0 ? 'rgba(138,144,174,.25)' : pCol(b.w, disp.vshade ? Math.min(1, .22 + Math.max(0, b.z)/2.6) : .85); vx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
+    if (b.g >= 0 && b.w === b.g && cell > 7){ vx.fillStyle = '#fff'; vx.beginPath(); vx.arc(x + cell/2, y + cell/2, Math.max(1.5, cell*0.14), 0, Math.PI*2); vx.fill(); } });
+  if (!list.length){ vx.fillStyle = COL.muted; vx.textAlign = 'center'; vx.textBaseline = 'middle'; fitText(vx, 'Blocks appear here as the stream runs', W/2, gridH/2, W*0.9, 24); }
+  // share of untied blocks each pole won, with the chance line
+  const wins = new Array(K).fill(0); let un = 0; for (const b of list) if (b.w >= 0){ wins[b.w]++; un++; }
+  const bw = W/K, exp = 1/K;
+  for (let k = 0; k < K; k++){ const f = un ? wins[k]/un : 0, h = Math.min(1, f/(exp*2))*barH;
+    vx.fillStyle = pCol(k, .85); vx.fillRect(k*bw + 6, barTop + barH - h, bw - 12, h);
+    vx.fillStyle = COL.muted; vx.font = '400 20px "IBM Plex Mono", monospace'; vx.textAlign = 'center'; vx.textBaseline = 'top'; vx.fillText(`${pName(k)} · ${Math.round(f*100)}%`, k*bw + bw/2, barTop + barH + 6); }
+  const ey = barTop + barH - 0.5*barH; vx.strokeStyle = COL.muted; vx.setLineDash([6, 6]); vx.lineWidth = 2; vx.beginPath(); vx.moveTo(0, ey); vx.lineTo(W, ey); vx.stroke(); vx.setLineDash([]);
+}
+function pushSym(sy){ for (const w of [fw, jw]) if (fill >= w.N) w.c[buf[(bi - w.N + BUF) % BUF]]--; buf[bi] = sy; bi = (bi + 1) % BUF; fill = Math.min(BUF, fill + 1); fw.c[sy]++; jw.c[sy]++; blk.c[sy]++; if (++blk.n >= disp.blk) finishBlock(); }
+$('win').addEventListener('change', e => { fw.N = Math.round(+e.target.value*RATE); recalc(fw); });
+$('jwin').addEventListener('change', e => { setDisp({ jwin: +e.target.value }); jw.N = Math.round(disp.jwin*RATE); recalc(jw); });
+const zPole = (w, k) => { const n = Math.min(w.N, fill), p = 1/K; return n ? (w.c[k] - n*p)/Math.sqrt(n*p*(1 - p)) : 0; };
+
+// ---------- session (one per pole count) ----------
+const skey = () => 'focusfield.sess.' + K;
+let sess, rawChunks, rawComplete, curC, curN, curRaw, focus = -1, recording = false, st = null;
+function openSession(){ sess = load(skey(), null) || { K, started: null, sec: [] }; rawChunks = []; rawComplete = sess.sec.length === 0; curC = new Array(K).fill(0); curN = 0; curRaw = new Uint8Array(RATE); sb = { n: 0, w: 0, ties: 0 }; derive(); }
+function derive(){
+  const p = 1/K, s = { n: 0, tot: new Array(K).fill(0), base: new Array(K).fill(0), baseN: 0, lead: new Array(K).fill(0), flips: 0, pairs: 0, last: -1, streak: 0, maxStreak: 0, goalRun: 0, maxGoalRun: 0,
+    gN: 0, gH: 0, fs: 0, sw: 0, cum: [[0, 0, 0, 0]], per: Array.from({ length: K }, () => [0, 0]) };
+  let lastF = -1, d1 = 0;
+  for (const row of sess.sec){
+    const c = row.slice(0, K), f = row[K], n = c.reduce((a, b) => a + b, 0); s.n += n; c.forEach((v, k) => s.tot[k] += v);
+    let mx = -1, top = -1, tie = false; c.forEach((v, k) => { if (v > mx){ mx = v; top = k; tie = false; } else if (v === mx) tie = true; });
+    if (!tie){ s.lead[top]++; if (s.last !== -1){ s.pairs++; if (top !== s.last) s.flips++; } s.streak = top === s.last ? s.streak + 1 : 1; s.last = top; s.maxStreak = Math.max(s.maxStreak, s.streak); }
+    else s.last = -1;
+    if (f >= 0){ s.gN += n; s.gH += c[f]; s.fs++; s.per[f][0] += n; s.per[f][1] += c[f]; if (lastF >= 0 && f !== lastF) s.sw++; lastF = f;
+      s.goalRun = !tie && top === f ? s.goalRun + 1 : 0; s.maxGoalRun = Math.max(s.maxGoalRun, s.goalRun); }
+    else { s.baseN += n; c.forEach((v, k) => s.base[k] += v); s.goalRun = 0; }
+    d1 += c[0] - n*p;
+    s.cum.push([s.cum.length, s.gH - s.gN*p, s.gN, d1]);
+  }
+  st = s;
+}
+const zK = (h, n) => n ? (h - n/K)/Math.sqrt(n*(1/K)*(1 - 1/K)) : 0;
+function addSecond(){
+  sess.sec.push(curC.concat([focus])); rawChunks.push(curRaw); curC = new Array(K).fill(0); curN = 0; curRaw = new Uint8Array(RATE);
+  derive(); if (sess.sec.length % 5 === 0) save(skey(), sess); renderFocus(); drawRibbon(); drawChart();
+}
+function setRec(on){
+  if (on && run) stopRun('Trials stopped: focus recording started.');
+  recording = on; if (on && !sess.started) sess.started = new Date().toISOString();
+  $('fStart').disabled = on; $('fStop').disabled = !on; $('fFinish').disabled = on || !sess.sec.length;
+  document.querySelectorAll('#polesSeg button').forEach(b => b.disabled = on);
+  $('fState').classList.toggle('on', on); $('fState').querySelector('span').textContent = on ? 'recording' : (sess.sec.length ? 'paused' : 'ready');
+  $('fStart').textContent = !on && sess.sec.length ? 'Resume' : 'Start';
+  const pl = $('player'); if (pl.src){ if (on) pl.play().catch(() => {}); else pl.pause(); }
+  if (!on){ curC = new Array(K).fill(0); curN = 0; curRaw = new Uint8Array(RATE); save(skey(), sess); }
+}
+$('fStart').addEventListener('click', () => setRec(true));
+$('fStop').addEventListener('click', () => setRec(false));
+let armed = false;
+$('fReset').addEventListener('click', () => {
+  if (!armed){ armed = true; $('fReset').textContent = 'Tap again to discard'; setTimeout(() => { armed = false; $('fReset').textContent = 'Discard'; }, 3000); return; }
+  armed = false; $('fReset').textContent = 'Discard'; setRec(false); sess = { K, started: null, sec: [] }; save(skey(), sess); openSession(); setRec(false); renderFocus(); drawRibbon(); drawChart(); $('fMsg').textContent = 'Session discarded.';
+});
+function setPoles(k){
+  if (recording || k === K) return; K = k; resetBlocks(); pulse.k = -1; save('focusfield.K', K); fill = 0; bi = 0; recalc(fw); recalc(jw); jit.length = 0; focus = -1; orb.x = orb.y = 0; trail.length = 0;
+  openSession(); buildPoles(); buildFocus(); setRec(false); renderFocus(); drawRibbon(); drawChart();
+}
+function buildPoles(){
+  $('polesSeg').innerHTML = POLES.map(k => `<button data-k="${k}" aria-pressed="${k === K}">${k}</button>`).join('');
+  $('polesSeg').querySelectorAll('button').forEach(b => b.addEventListener('click', () => setPoles(+b.dataset.k)));
+  $('keysHint').innerHTML = K === 2 ? '<kbd>1</kbd> <kbd>0</kbd>' : `<kbd>1</kbd>–<kbd>${K}</kbd>`;
+}
+function buildFocus(){
+  $('focusSeg').innerHTML = Array.from({ length: K }, (_, k) => `<button data-f="${k}"><span class="dot" style="background:${pCol(k)}"></span>${pName(k)}</button>`).join('') + '<button data-f="-1">Nothing</button>';
+  $('focusSeg').querySelectorAll('button').forEach(b => b.addEventListener('click', () => setFocus(+b.dataset.f)));
+  setFocus(focus);
+}
+function setFocus(f){
+  focus = f;
+  $('focusSeg').querySelectorAll('button').forEach(b => { const on = +b.dataset.f === f; b.setAttribute('aria-pressed', String(on)); b.style.background = on && f >= 0 ? pCol(f, .9) : ''; b.style.color = on && f >= 0 ? '#06070D' : ''; });
+  if (!run){ const c = $('cue'); c.className = 'cue' + (f < 0 ? ' rest' : ''); c.style.color = f >= 0 ? pCol(f) : ''; c.textContent = f >= 0 ? `Focusing on ${pName(f)}` : (K === 2 ? 'Live stream' : `Live ${K}-pole wheel`); }
+}
+document.addEventListener('keydown', e => {
+  if (e.target.closest('select,input') || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (run && e.key !== ' ') return;
+  if (K === 2 && (e.key === '1' || e.key === '0')) setFocus(e.key === '1' ? 0 : 1);
+  else { const d = parseInt(e.key, 10); if (d >= 1 && d <= K) setFocus(d - 1); }
+  if (e.key === 'n' || e.key === 'N') setFocus(-1);
+  else if (e.key === ' ' && !e.target.closest('button')){ e.preventDefault(); setRec(!recording); }
+});
+
+function renderFocus(){
+  const s = st, secs = sess.sec.length, chanceFlips = Math.round(60*(1 - 1/K));
+  $('f-time').textContent = mmss(secs); $('f-n').textContent = s.n.toLocaleString() + ' draws';
+  $('f-now').innerHTML = s.last >= 0 ? `<span style="color:${pCol(s.last)}">● ${pName(s.last)}</span>` : '—'; $('f-streak').textContent = s.last >= 0 ? `streak ${s.streak} s` : 'streak —';
+  $('f-flips').textContent = s.flips; $('f-fliprate').textContent = (secs > 5 ? (s.flips/(secs/60)).toFixed(1) : '—') + ` per min (chance ≈ ${chanceFlips})`;
+  const gz = zK(s.gH, s.gN); $('f-gz').textContent = s.gN ? sg(gz) : '—'; $('f-gp').textContent = s.gN ? 'p (one-sided) ' + pOne(gz).toFixed(3) : 'p —';
+  $('f-hit').textContent = s.gN ? (s.gH/s.gN*100).toFixed(2) + '%' : '—'; $('f-chance').textContent = 'chance ' + (100/K).toFixed(2) + '%';
+  const bz = zK(sb.w, sb.n); $('f-bv').textContent = sb.n ? `${sb.w}/${sb.n}` : '—'; $('f-bvs').textContent = (sb.n ? (sb.w/sb.n*100).toFixed(1) + '% · ' : '') + 'chance ' + (100/K).toFixed(0) + '%';
+  $('f-bz').textContent = sb.n ? sg(bz) : '—'; $('f-bzs').textContent = sb.n ? 'p (one-sided) ' + pOne(bz).toFixed(3) + ` · ${disp.blk}-draw blocks` : `${disp.blk}-draw blocks`;
+  $('f-fs').textContent = s.fs + ' s'; $('f-sw').textContent = s.sw + ' goal switch' + (s.sw === 1 ? '' : 'es');
+  $('f-per').innerHTML = s.per.map(([n, h], k) => n ? `<span><span style="color:${pCol(k)}">● ${pName(k)}</span> ${sg(zK(h, n))}</span>` : '').join('');
+  const bc = $('bars'), bx = bc.getContext('2d'), W = bc.width, H = bc.height; bx.clearRect(0, 0, W, H);
+  const tot = Math.max(1, s.lead.reduce((a, b) => a + b, 0)), bw = W/K, exp = 1/K;
+  s.lead.forEach((v, k) => { const f = v/tot, h = Math.min(1, f/(exp*2))*(H - 30); bx.fillStyle = pCol(k, .85); bx.fillRect(k*bw + 6, H - 24 - h, bw - 12, h);
+    bx.fillStyle = COL.muted; bx.font = '400 20px "IBM Plex Mono", monospace'; bx.textAlign = 'center'; bx.textBaseline = 'top'; bx.fillText(`${pName(k)} · ${Math.round(f*100)}%`, k*bw + bw/2, H - 22); });
+  bx.strokeStyle = COL.muted; bx.setLineDash([6, 6]); bx.lineWidth = 2; const ey = H - 24 - 0.5*(H - 30); bx.beginPath(); bx.moveTo(0, ey); bx.lineTo(W, ey); bx.stroke(); bx.setLineDash([]);
+  $('fFinish').disabled = recording || !secs;
+  $('g-stats-s').textContent = s.gN ? `goal z ${sg(gz)} · p ${pOne(gz).toFixed(3)}` : (secs ? mmss(secs) + ' recorded' : '');
+  $('g-focus-s').textContent = secs ? mmss(secs) : '';
+}
+
+// ---------- SHA-256 (WebCrypto, with a small fallback) ----------
+async function sha256(bytes){
+  if (crypto.subtle && crypto.subtle.digest){ try { const h = await crypto.subtle.digest('SHA-256', bytes); return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join(''); } catch(e) {} }
+  const K2 = [0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+  let H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+  const l = bytes.length, m = new Uint8Array(((l + 9 + 63) >> 6) << 6); m.set(bytes); m[l] = 0x80; const dv = new DataView(m.buffer); dv.setUint32(m.length - 4, l*8 >>> 0); dv.setUint32(m.length - 8, Math.floor(l/0x20000000));
+  const w = new Uint32Array(64), r = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let o = 0; o < m.length; o += 64){
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(o + i*4);
+    for (let i = 16; i < 64; i++){ const s0 = r(w[i-15], 7) ^ r(w[i-15], 18) ^ (w[i-15] >>> 3), s1 = r(w[i-2], 17) ^ r(w[i-2], 19) ^ (w[i-2] >>> 10); w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0; }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++){ const t1 = (h + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + ((e & f) ^ (~e & g)) + K2[i] + w[i]) >>> 0, t2 = ((r(a, 2) ^ r(a, 13) ^ r(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0; }
+    H = H.map((v, i) => (v + [a, b, c, d, e, f, g, h][i]) >>> 0);
+  }
+  return H.map(v => v.toString(16).padStart(8, '0')).join('');
+}
+
+// ---------- finish: analyse, hash, save to history ----------
+let history = load('focusfield.history', []), lastReport = null;
+$('fFinish').addEventListener('click', async () => {
+  if (recording || !sess.sec.length) return;
+  const s = st, p = 1/K, secs = sess.sec.length, finished = new Date().toISOString();
+  const gz = zK(s.gH, s.gN), gp = pOne(gz);
+  let chi = 0; if (s.baseN) for (let k = 0; k < K; k++){ const e = s.baseN*p; chi += (s.base[k] - e)**2/e; }
+  const baseP = s.baseN ? chiP(chi, K - 1) : null;
+  const expFlipRate = 1 - p, flipRate = s.pairs ? s.flips/s.pairs : null;
+  const expLongest = Math.max(1, Math.log(Math.max(2, secs*(1 - p)))/Math.log(1/p));
+  const verdict = !s.gN ? ['No goal was set: baseline only', 'chance'] : gp < 0.01 ? ['A strong lean toward your goal', 'strong'] : gp < 0.05 ? ['A notable lean toward your goal', 'notable'] : gz > 0 ? ['Toward your goal, but within chance', 'chance'] : ['Consistent with chance', 'chance'];
+  // seed: SHA-256 of header + raw draws (when this page saw the whole session) + per-second counts and focus marks
+  const head = new TextEncoder().encode(JSON.stringify({ tool: 'focus-field', K, started: sess.started, finished, secs }));
+  const raw = rawComplete ? (() => { const a = new Uint8Array(rawChunks.length*RATE); rawChunks.forEach((c, i) => a.set(c, i*RATE)); return a; })() : new Uint8Array(0);
+  const marks = new TextEncoder().encode(JSON.stringify(sess.sec));
+  const all = new Uint8Array(head.length + raw.length + marks.length); all.set(head); all.set(raw, head.length); all.set(marks, head.length + raw.length);
+  const seed = await sha256(all), short = parseInt(seed.slice(0, 8), 16);
+  const rep = { when: finished, started: sess.started, poles: K, seconds: secs, draws: s.n, focusSeconds: s.fs, goalSwitches: s.sw,
+    goal: { z: +gz.toFixed(3), p: +gp.toFixed(4), hitRate: s.gN ? +(s.gH/s.gN).toFixed(5) : null, chance: +p.toFixed(5), perPole: s.per.map(([n, h], k) => ({ pole: pName(k), draws: n, z: +zK(h, n).toFixed(3) })) },
+    baseline: { seconds: secs - s.fs, chi2: +chi.toFixed(2), df: K - 1, p: baseP == null ? null : +baseP.toFixed(4) },
+    leaderChanges: { observed: s.flips, perSecond: flipRate == null ? null : +flipRate.toFixed(3), expectedPerSecond: +expFlipRate.toFixed(3) },
+    streaks: { longestLeader: s.maxStreak, expectedLongest: +expLongest.toFixed(1), longestOnGoal: s.maxGoalRun },
+    blockVotes: { blockSize: disp.blk, untiedOnGoal: sb.n, wonByGoal: sb.w, ties: sb.ties, chance: +p.toFixed(5), z: +zK(sb.w, sb.n).toFixed(3), p: sb.n ? +pOne(zK(sb.w, sb.n)).toFixed(4) : null, note: sb.n && !rawComplete ? 'counted only for the part recorded since the page loaded' : null },
+    verdict: verdict[0], seed, shortSeed: short, rawStreamHashed: rawComplete, song: songName || null, sec: sess.sec };
+  lastReport = rep;
+  history.unshift({ when: finished, poles: K, seconds: secs, focusSeconds: s.fs, switches: s.sw, z: rep.goal.z, p: rep.goal.p, verdict: verdict[0], baselineP: rep.baseline.p, seed, short });
+  history = history.slice(0, 200); save('focusfield.history', history);
+  showReport(rep, verdict[1]); renderHistory();
+  sess = { K, started: null, sec: [] }; save(skey(), sess); openSession(); setRec(false); renderFocus(); drawRibbon(); drawChart();
+  $('fMsg').textContent = 'Session finished and saved. A new session is ready.';
+  $('reportPanel').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+});
+function showReport(r, cls){
+  $('reportPanel').hidden = false;
+  $('r-when').textContent = new Date(r.when).toLocaleString() + ' · ' + r.poles + ' poles';
+  const v = $('r-verdict'); v.textContent = r.verdict + (r.focusSeconds ? ` (z ${sg(r.goal.z)}, p ${r.goal.p.toFixed(3)})` : ''); v.className = 'verdict ' + cls;
+  const cell = (k, val, sub) => `<div class="stat"><div class="k">${k}</div><div class="v">${val}</div><div class="s">${sub}</div></div>`;
+  $('r-stats').innerHTML = [
+    cell('Length', mmss(r.seconds), r.draws.toLocaleString() + ' draws'),
+    cell('Focus time', r.focusSeconds + ' s', r.goalSwitches + ' goal switch' + (r.goalSwitches === 1 ? '' : 'es')),
+    cell('Hit rate on goal', r.goal.hitRate == null ? '—' : (r.goal.hitRate*100).toFixed(2) + '%', 'chance ' + (r.goal.chance*100).toFixed(2) + '%'),
+    cell('Baseline (no focus)', r.baseline.p == null ? '—' : 'p ' + r.baseline.p.toFixed(3), r.baseline.seconds + ' s · chi² ' + r.baseline.chi2 + ', df ' + r.baseline.df),
+    cell('Leader changes', r.leaderChanges.perSecond == null ? '—' : (r.leaderChanges.perSecond*100).toFixed(0) + '% of seconds', 'chance ≈ ' + Math.round(r.leaderChanges.expectedPerSecond*100) + '%'),
+    cell('Longest streak', r.streaks.longestLeader + ' s', 'chance ≈ ' + r.streaks.expectedLongest + ' s · on goal ' + r.streaks.longestOnGoal + ' s'),
+    r.blockVotes && r.blockVotes.untiedOnGoal ? `<div class="stat" style="grid-column:1/-1"><div class="k">Block votes for goal (${r.blockVotes.blockSize}-draw blocks)</div><div class="v">${r.blockVotes.wonByGoal}/${r.blockVotes.untiedOnGoal} · z ${sg(r.blockVotes.z)}</div><div class="s">chance ${(r.blockVotes.chance*100).toFixed(1)}% · p ${r.blockVotes.p.toFixed(3)} · ${r.blockVotes.ties} tied blocks left out</div></div>` : '',
+  ].join('') + (r.goal.perPole.some(x => x.draws) ? `<div class="stat" style="grid-column:1/-1"><div class="k">Toward each goal</div><div class="s" style="font-size:13px">${r.goal.perPole.filter(x => x.draws).map(x => `${x.pole}: ${sg(x.z)}`).join(' · ')}</div></div>` : '');
+  $('r-seed').textContent = r.seed + (r.rawStreamHashed ? '' : '  (raw draws not available after a reload; hashed from counts and marks)');
+}
+$('r-copyseed').addEventListener('click', () => lastReport && copy(lastReport.seed, 'Seed copied.', t => $('r-msg').textContent = t));
+$('r-copyshort').addEventListener('click', () => lastReport && copy(String(lastReport.shortSeed), 'Short seed copied: ' + lastReport.shortSeed, t => $('r-msg').textContent = t));
+$('r-copyall').addEventListener('click', () => lastReport && copy(lastReport, 'Full report copied. Paste it to Claude to analyse.', t => $('r-msg').textContent = t));
+function renderHistory(){
+  const t = $('histTable');
+  if (!history.length){ t.innerHTML = '<tr><td style="color:var(--muted);font-family:var(--body)">Finished sessions appear here with their verdict and seed.</td></tr>'; return; }
+  t.innerHTML = '<thead><tr><th>When</th><th>Poles</th><th>Length</th><th>Focus</th><th>Switches</th><th>Goal z</th><th>p</th><th>Verdict</th><th>Short seed</th><th></th></tr></thead><tbody>' +
+    history.map((h, i) => `<tr><td>${new Date(h.when).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td><td>${h.poles}</td><td>${mmss(h.seconds)}</td><td>${h.focusSeconds} s</td><td>${h.switches}</td><td style="color:${h.z > 0 ? 'var(--gold)' : 'var(--muted)'}">${h.focusSeconds ? sg(h.z) : '—'}</td><td>${h.focusSeconds ? h.p.toFixed(3) : '—'}</td><td style="font-family:var(--body)">${h.verdict}</td><td>${h.short}</td><td><button class="btn ghost small" data-i="${i}">Copy seed</button></td></tr>`).join('') + '</tbody>';
+  t.querySelectorAll('button[data-i]').forEach(b => b.addEventListener('click', () => copy(history[+b.dataset.i].seed, 'Seed copied.', m => $('fMsg').textContent = m)));
+}
+$('h-copy').addEventListener('click', () => copy({ tool: 'focus-field', history }, `History copied (${history.length} sessions).`, t => $('fMsg').textContent = t));
+let hArmed = false;
+$('h-clear').addEventListener('click', () => { if (!hArmed){ hArmed = true; $('h-clear').textContent = 'Tap again to clear'; setTimeout(() => { hArmed = false; $('h-clear').textContent = 'Clear history'; }, 3000); return; }
+  hArmed = false; $('h-clear').textContent = 'Clear history'; history = []; save('focusfield.history', history); renderHistory(); });
+// ---------- TRIALS ----------
+let log = load('focusfield.log', []);
+let mode = 'random', run = null;
+document.querySelectorAll('#mode button').forEach(b => b.addEventListener('click', () => { if (run) return; mode = b.dataset.m; document.querySelectorAll('#mode button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); }));
+function pickTarget(){ if (mode === 'one') return 1; if (mode === 'zero') return 0; if (mode === 'control') return null; const b = new Uint8Array(1); crypto.getRandomValues(b); return b[0] & 1; }
+function startRun(){
+  if (recording) setRec(false);
+  run = { len: +$('len').value, count: +$('count').value, done: 0, phase: 'ready', t0: performance.now(), target: pickTarget(), n: 0, ones: 0, feedback: $('fb').value === 'on' };
+  $('start').disabled = true; $('stop').disabled = false; $('toast2').textContent = '';
+  const p = $('player'); if (p.src){ p.currentTime = 0; p.play().catch(() => {}); }
+  cueReady();
+}
+function cueReady(){ const t = run.target; if (t === null) setCue('Control: relax, no intention (starts in 3)', 'rest'); else setCue(t === 1 ? 'Get ready to picture 1, cyan' : 'Get ready to picture 0, coral', t === 1 ? 'one' : 'zero'); }
+function advance(now){
+  const el = (now - run.t0)/1000;
+  if (run.phase === 'ready'){
+    if (el >= 3){ run.phase = 'trial'; run.t0 = now; run.n = 0; run.ones = 0; const t = run.target;
+      setCue(t === null ? 'Control: just watch' : t === 1 ? 'Picture 1 · cyan' : 'Picture 0 · coral', t === null ? 'rest' : t === 1 ? 'one' : 'zero'); }
+    $('prog').style.width = '0%';
+  } else if (run.phase === 'trial'){
+    $('prog').style.width = Math.min(100, el/run.len*100) + '%';
+    if (el >= run.len){
+      const t = run.target, hits = t === null ? run.ones : (t === 1 ? run.ones : run.n - run.ones);
+      const rec = { at: new Date().toISOString(), kind: t === null ? 'control' : 'focus', target: t, n: run.n, ones: run.ones, hits, z: +z(hits, run.n).toFixed(3), song: songName || null };
+      log.push(rec); save('focusfield.log', log); run.done++; renderTrials(); drawChart();
+      setCue((t === null ? 'Control done: ' : 'Trial done: ') + sg(rec.z) + ' z' + (t === null ? '' : rec.z > 0 ? ' toward the target' : ' away from the target'), 'rest');
+      run.phase = 'rest'; run.t0 = now; run.lastZ = rec.z;
+    }
+  } else if (run.phase === 'rest' && el >= 2){
+    if (run.done >= run.count) return stopRun('Run complete: ' + run.count + ' trials logged.');
+    run.phase = 'ready'; run.t0 = now; run.target = pickTarget(); cueReady();
+  }
+}
+function stopRun(msg){ run = null; $('start').disabled = false; $('stop').disabled = true; $('prog').style.width = '0%'; const p = $('player'); if (!p.paused) p.pause(); $('tRun').textContent = msg || ''; setFocus(focus); }
+$('start').addEventListener('click', startRun);
+$('stop').addEventListener('click', () => stopRun('Stopped. Trials already finished are kept.'));
+function trialSummary(){
+  const f = log.filter(r => r.kind === 'focus'), c = log.filter(r => r.kind === 'control');
+  const fn = f.reduce((a, r) => a + r.n, 0), fh = f.reduce((a, r) => a + r.hits, 0), cn = c.reduce((a, r) => a + r.n, 0), ch = c.reduce((a, r) => a + r.hits, 0);
+  const fz = z(fh, fn), cz = z(ch, cn);
+  return { focusTrials: f.length, focusBits: fn, focusHits: fh, focusZ: +fz.toFixed(3), focusP: +pOne(fz).toFixed(4), controlTrials: c.length, controlBits: cn, controlZ: +cz.toFixed(3) };
+}
+function renderTrials(){
+  const s = trialSummary();
+  $('s-n').textContent = s.focusTrials; $('s-bits').textContent = s.focusBits.toLocaleString() + ' bits';
+  $('s-hit').textContent = s.focusBits ? (s.focusHits/s.focusBits*100).toFixed(3) + '%' : '—';
+  $('s-z').textContent = s.focusBits ? sg(s.focusZ) : '—'; $('s-p').textContent = 'p (one-sided) ' + (s.focusBits ? s.focusP.toFixed(3) : '—');
+  $('s-cz').textContent = s.controlBits ? sg(s.controlZ) : '—'; $('s-cn').textContent = s.controlTrials + ' control trials';
+  $('tq').textContent = `${s.focusTrials} focus trials` + (s.focusBits ? ` · z ${sg(s.focusZ)} · p ${s.focusP.toFixed(3)}` : '') + (s.controlTrials ? ` · ${s.controlTrials} control` : '');
+}
+$('copy').addEventListener('click', () => copy({ tool: 'focus-field', mode: 'trials', rng: 'crypto.getRandomValues', rate: RATE, summary: trialSummary(), trials: log }, `Results copied (${log.length} trials). Paste them to Claude to analyse.`, t => $('toast2').textContent = t));
+let tArmed = false;
+$('reset').addEventListener('click', () => {
+  if (!tArmed){ tArmed = true; $('reset').textContent = 'Tap again to clear'; setTimeout(() => { tArmed = false; $('reset').textContent = 'Clear log'; }, 3000); return; }
+  tArmed = false; $('reset').textContent = 'Clear log'; log = []; save('focusfield.log', log); renderTrials(); drawChart(); $('toast2').textContent = 'Log cleared.';
+});
+
+
+function setCue(text, cls){ if (run) $('tRun').textContent = `Trial ${Math.min(run.done + 1, run.count)}/${run.count} · ${text}`; const c = $('cue'); c.textContent = text; c.className = 'cue ' + cls; c.style.color = cls === 'one' ? COL.one : cls === 'zero' ? COL.zero : ''; }
+
+// ---------- jitter: the continuum ----------
+const jit = [], JMAX = 1800;      // keep up to 60 s at 30 samples/s; the view shows the chosen span
+let jT = 0;
+const jc = $('jitter'), jx = jc.getContext('2d');
+function sampleJitter(now){ if (now - jT < 33) return; jT = now; jit.push(Array.from({ length: K }, (_, k) => zPole(jw, k))); if (jit.length > JMAX) jit.shift(); }
+function drawJitter(){
+  const JLEN = disp.jspan*30, vis = jit.slice(-JLEN);
+  let YM = disp.jy === 'auto' ? 0 : +disp.jy; if (!YM){ for (const v of vis) for (const x of v) YM = Math.max(YM, Math.abs(x)); YM = Math.max(1.5, YM*1.1); }
+  const W = jc.width, H = jc.height, L = 56, R = 10, T = 10, B = 30, mid = T + (H - T - B)/2, sc = (H - T - B)/2/YM;
+  jx.clearRect(0, 0, W, H);
+  const Y = v => mid - Math.max(-YM, Math.min(YM, v))*sc, X = i => L + (i + JLEN - vis.length)/(JLEN - 1)*(W - L - R);
+  jx.font = '400 22px "IBM Plex Mono", monospace'; jx.fillStyle = COL.muted; jx.textAlign = 'right'; jx.textBaseline = 'middle';
+  const gl = YM >= 2.5 ? [-2, 0, 2] : [-1, 0, 1];
+  for (const v of gl){ jx.strokeStyle = v ? 'rgba(138,144,174,.25)' : 'rgba(138,144,174,.6)'; jx.setLineDash(v ? [8, 8] : []); jx.lineWidth = 2; jx.beginPath(); jx.moveTo(L, Y(v)); jx.lineTo(W - R, Y(v)); jx.stroke(); jx.fillText((v > 0 ? '+' : '') + v, L - 10, Y(v)); }
+  jx.setLineDash([]); jx.textAlign = 'left'; jx.textBaseline = 'top'; jx.fillText('-' + disp.jspan + ' s', L, H - B + 6); jx.textAlign = 'right'; jx.fillText('now', W - R, H - B + 6);
+  if (vis.length < 2) return;
+  if (K === 2){
+    // one line (pole 1), filled cyan above chance and coral below
+    const path = () => { jx.beginPath(); jx.moveTo(X(0), mid); vis.forEach((v, i) => jx.lineTo(X(i), Y(v[0]))); jx.lineTo(X(vis.length - 1), mid); jx.closePath(); };
+    if (disp.jline === 'fill'){
+    jx.save(); jx.beginPath(); jx.rect(L, T, W - L - R, mid - T); jx.clip(); path(); jx.fillStyle = 'rgba(25,230,255,.35)'; jx.fill(); jx.restore();
+    jx.save(); jx.beginPath(); jx.rect(L, mid, W - L - R, H - B - mid); jx.clip(); path(); jx.fillStyle = 'rgba(255,90,46,.35)'; jx.fill(); jx.restore(); }
+    jx.strokeStyle = '#E6E9F5'; jx.lineWidth = 2.5; jx.beginPath(); vis.forEach((v, i) => i ? jx.lineTo(X(i), Y(v[0])) : jx.moveTo(X(i), Y(v[0]))); jx.stroke();
+  } else {
+    for (let k = 0; k < K; k++){ if (k === focus) continue; jx.strokeStyle = pCol(k, .55); jx.lineWidth = 2; jx.beginPath(); vis.forEach((v, i) => i ? jx.lineTo(X(i), Y(v[k])) : jx.moveTo(X(i), Y(v[k]))); jx.stroke(); }
+    if (focus >= 0){ jx.shadowColor = pCol(focus); jx.shadowBlur = 14; jx.strokeStyle = pCol(focus); jx.lineWidth = 5; jx.beginPath(); vis.forEach((v, i) => i ? jx.lineTo(X(i), Y(v[focus])) : jx.moveTo(X(i), Y(v[focus]))); jx.stroke(); jx.shadowBlur = 0; }
+  }
+}
+
+// ---------- the field ----------
+const cv = $('circle'), cx = cv.getContext('2d');
+let shown = 0.5, recent = [];
+const orb = { x: 0, y: 0 }, trail = [];
+function drawCircle(zz, hidden, ringCol, ticks = true){
+  const W = cv.width, R = W*0.4, C = W/2;
+  const target = hidden ? 0.5 : Math.max(0, Math.min(1, 0.5 + zz/8)); shown += (target - shown)*0.08;
+  cx.clearRect(0, 0, W, W); cx.save(); cx.beginPath(); cx.arc(C, C, R, 0, Math.PI*2); cx.clip();
+  const yLine = C + R - shown*2*R, tt = performance.now()/1000, wa = disp.wave ? 1 : 0;
+  cx.fillStyle = COL.zero; cx.fillRect(0, 0, W, W);
+  cx.beginPath(); cx.moveTo(0, W); for (let x = 0; x <= W; x += 8) cx.lineTo(x, yLine + wa*(Math.sin(x/70 + tt*2)*10 + Math.sin(x/23 - tt*3)*4)); cx.lineTo(W, W); cx.closePath(); cx.fillStyle = COL.one; cx.fill();
+  const bs = disp.bubSz/100;
+  drawBubbles(C, R);
+  if (disp.bmode === 'deco' && disp.bub) for (const p of recent){ p.life -= 0.02; const x = C + Math.cos(p.a)*p.r*R, y = C + Math.sin(p.a)*p.r*R; cx.globalAlpha = Math.max(0, p.life)*0.9; cx.fillStyle = p.b ? '#D9FBFF' : '#FFD7CB'; cx.beginPath(); cx.arc(x, y, (3 + 6*p.life)*bs, 0, Math.PI*2); cx.fill(); }
+  cx.globalAlpha = 1;
+  if (disp.vig){ const g = cx.createRadialGradient(C, C, R*0.2, C, C, R); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.45)'); cx.fillStyle = g; cx.fillRect(0, 0, W, W); }
+  cx.restore();
+  cx.lineWidth = ringCol ? 10 : 6; cx.strokeStyle = ringCol || COL.line; cx.beginPath(); cx.arc(C, C, R + 10, 0, Math.PI*2); cx.stroke();
+  if (!hidden && !run) drawPulse(C, R);
+  if (ticks && disp.ticks){ cx.fillStyle = COL.muted; cx.font = '500 24px "IBM Plex Mono", monospace'; cx.textAlign = 'right'; cx.textBaseline = 'middle';
+    for (const k of [-3, -2, -1, 0, 1, 2, 3]){ const y = C - (k/8)*2*R; cx.fillRect(C - R - 34, y - 1.5, 18, 3); cx.fillText((k > 0 ? '+' : '') + k, C - R - 42, y); } }
+  if (hidden){ cx.fillStyle = 'rgba(7,8,15,.55)'; cx.beginPath(); cx.arc(C, C, R, 0, Math.PI*2); cx.fill(); cx.fillStyle = COL.muted; cx.textAlign = 'center'; cx.font = '500 32px "IBM Plex Sans", sans-serif'; cx.fillText('feedback hidden', C, C); }
+}
+function drawRadar(){
+  const W = cv.width, C = W/2, R = W*0.4, r0 = R*0.55, zs = R*0.11, n = Math.min(fw.N, fill), p = 1/K;
+  cx.clearRect(0, 0, W, W);
+  let vx = 0, vy = 0; for (let k = 0; k < K; k++){ const d = fw.c[k] - n*p; vx += d*Math.cos(pAng(k)); vy += d*Math.sin(pAng(k)); }
+  const norm = n ? Math.sqrt(n/2) : 1, ox = vx/norm, oy = vy/norm, mag = Math.hypot(ox, oy), ang = Math.atan2(oy, ox), hue = (190 + ((ang + Math.PI/2)*180/Math.PI) + 720) % 360;
+  orb.x += (ox - orb.x)*0.1; orb.y += (oy - orb.y)*0.1;
+  let oc;   // the orb's colour: shifts with the lean, takes the nearest pole's colour, or stays one colour
+  if (disp.orb === 'one') oc = hex2rgb(disp.orbC);
+  else if (disp.orb === 'pole'){ const sa = Math.atan2(orb.y, orb.x), kk = ((Math.round((sa + Math.PI/2)/(2*Math.PI/K)) % K) + K) % K; oc = hsl2rgb(pHue(kk), 95, K > 6 && kk % 2 ? 66 : 58); }
+  else oc = hsl2rgb(hue, 95, 62);
+  const g = cx.createRadialGradient(C, C, 0, C, C, R); g.addColorStop(0, rgba(oc, Math.min(.35, mag*.09))); g.addColorStop(1, '#0A0C18');
+  cx.fillStyle = g; cx.beginPath(); cx.arc(C, C, R, 0, Math.PI*2); cx.fill();
+  cx.save(); cx.beginPath(); cx.arc(C, C, R, 0, Math.PI*2); cx.clip(); drawBubbles(C, R); cx.restore();
+  if (focus >= 0){ const a = pAng(focus), w = Math.PI/K; cx.fillStyle = pCol(focus, .14); cx.beginPath(); cx.moveTo(C, C); cx.arc(C, C, R, a - w, a + w); cx.closePath(); cx.fill(); }
+  cx.lineWidth = 2; for (const [zr, al] of [[-2, .35], [0, .8], [2, .35]]){ cx.strokeStyle = `rgba(138,144,174,${al})`; cx.setLineDash(zr ? [8, 8] : []); cx.beginPath(); cx.arc(C, C, r0 + zr*zs, 0, Math.PI*2); cx.stroke(); }
+  cx.setLineDash([]);
+  for (let k = 0; k < K; k++){ const a = pAng(k); cx.strokeStyle = 'rgba(138,144,174,.25)'; cx.beginPath(); cx.moveTo(C, C); cx.lineTo(C + Math.cos(a)*R, C + Math.sin(a)*R); cx.stroke();
+    const dx = C + Math.cos(a)*(R + 26), dy = C + Math.sin(a)*(R + 26); cx.fillStyle = pCol(k); cx.beginPath(); cx.arc(dx, dy, focus === k ? 26 : 18, 0, Math.PI*2); cx.fill();
+    if (focus === k){ cx.strokeStyle = '#fff'; cx.lineWidth = 4; cx.stroke(); cx.lineWidth = 2; }
+    cx.fillStyle = '#06070D'; cx.font = '600 20px "IBM Plex Mono", monospace'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(pName(k), dx, dy + 1); }
+  const rz = k => { const zz = zPole(fw, k); return Math.max(R*0.08, Math.min(R, r0 + zz*zs)); };
+  cx.beginPath(); for (let k = 0; k <= K; k++){ const kk = k % K, r = rz(kk), a = pAng(kk); k ? cx.lineTo(C + Math.cos(a)*r, C + Math.sin(a)*r) : cx.moveTo(C + Math.cos(a)*r, C + Math.sin(a)*r); }
+  cx.fillStyle = rgba(oc, .18); cx.fill(); cx.strokeStyle = 'rgba(230,233,245,.85)'; cx.lineWidth = 3; cx.stroke();
+  for (let k = 0; k < K; k++){ const r = rz(k), a = pAng(k); cx.fillStyle = pCol(k); cx.beginPath(); cx.arc(C + Math.cos(a)*r, C + Math.sin(a)*r, 8, 0, Math.PI*2); cx.fill(); }
+  const px = C + orb.x*R*0.2, py = C + orb.y*R*0.2;
+  if (disp.trail){ trail.push([px, py]); if (trail.length > 90) trail.shift();
+    cx.lineWidth = 3; cx.lineJoin = 'round'; cx.beginPath(); trail.forEach((q, i) => i ? cx.lineTo(q[0], q[1]) : cx.moveTo(q[0], q[1])); cx.strokeStyle = rgba(oc, .35); cx.stroke(); }
+  const og = cx.createRadialGradient(px, py, 0, px, py, 46); og.addColorStop(0, disp.orb === 'one' ? rgba(oc, 1) : '#fff'); og.addColorStop(.35, rgba(oc, 1)); og.addColorStop(1, rgba(oc, 0));
+  cx.fillStyle = og; cx.beginPath(); cx.arc(px, py, 46, 0, Math.PI*2); cx.fill();
+  drawPulse(C, R);
+  return mag;
+}
+function frame(now){
+  sampleJitter(now || performance.now());
+  if (run){
+    let zz, hidden = false, label = $('win').value + ' s window';
+    if (run && run.phase === 'trial'){ zz = z(run.ones, run.n); hidden = !run.feedback; label = 'trial'; }
+    else if (run && run.phase === 'rest' && run.lastZ != null && run.target !== null) zz = run.target === 1 ? run.lastZ : -run.lastZ;
+    else zz = 0;
+    drawCircle(zz, hidden, null); $('live').textContent = label + ' z ' + (hidden ? 'hidden' : sg(zz));
+  } else if (K === 2){
+    const zz = zPole(fw, 0); drawCircle(zz, false, focus >= 0 ? pCol(focus) : null); $('live').textContent = `${$('win').value} s window z ${sg(zz)} toward 1`;
+  } else { const mag = drawRadar(); $('live').textContent = `${$('win').value} s window · pull ${mag.toFixed(2)} sd`; }
+  $('rate').textContent = rateShown + ' draws/s';
+  const lb = lastBlock; $('lastBlk').innerHTML = !lb ? 'block —' : lb.w < 0 ? 'block tied' : `block <span style="color:${pCol(lb.w)}">● ${pName(lb.w)}</span> ${sg(lb.z)}`;
+  if (!$('p-vote').classList.contains('min') || expanded === $('p-vote')) drawVotes();
+  drawJitter();
+  recent = recent.filter(p => p.life > 0).slice(-400);
+  requestAnimationFrame(frame);
+}
+
+// ---------- ribbon ----------
+const rb = $('ribbon'), rc = rb.getContext('2d');
+function drawRibbon(){
+  const W = rb.width, H = rb.height, L = 10, R = 10, top = 8, fH = 22, cellTop = top + fH + 8, cellH = H - cellTop - 44;
+  rc.clearRect(0, 0, W, H);
+  const S = sess.sec, VIS = 240, start = Math.max(0, S.length - VIS), n = S.length - start, cw = (W - L - R)/VIS, p = 1/K;
+  rc.fillStyle = '#0A0C18'; rc.fillRect(L, cellTop, W - L - R, cellH);
+  for (let i = 0; i < n; i++){
+    const row = S[start + i], c = row.slice(0, K), f = row[K], tot = c.reduce((a, b) => a + b, 0), x = L + (VIS - n + i)*cw;
+    let t0 = 0; c.forEach((v, k) => { if (v > c[t0]) t0 = k; });
+    const zz = (c[t0] - tot*p)/Math.sqrt(tot*p*(1 - p));
+    rc.fillStyle = f >= 0 ? pCol(f, .9) : 'rgba(58,65,112,.6)'; rc.fillRect(x, top, Math.max(1, cw - 1), fH);
+    rc.fillStyle = pCol(t0, Math.min(1, .15 + Math.max(0, zz - (K === 2 ? 0 : 1))/2.5)); rc.fillRect(x, cellTop, Math.max(1, cw - 1), cellH);
+    if (f >= 0 && f === t0){ rc.fillStyle = '#fff'; rc.fillRect(x, cellTop + cellH - 6, Math.max(1, cw - 1), 6); }
+  }
+  rc.fillStyle = COL.muted; rc.font = '400 22px "IBM Plex Mono", monospace'; rc.textBaseline = 'top';
+  const lstep = W < 1600 ? 60 : 30; for (let k = 0; k < VIS; k += lstep){ const x = L + (VIS - k)*cw; rc.textAlign = k === 0 ? 'right' : 'center'; rc.fillText(k === 0 ? 'now' : '-' + k + ' s', Math.min(W - R, x), H - 34); }
+  rc.textAlign = 'left'; rc.fillText('-' + VIS + ' s', L, H - 34);
+  if (!S.length){ rc.textAlign = 'center'; rc.textBaseline = 'middle'; fitText(rc, 'Press Start: each second adds a cell in the pole that led', W/2, cellTop + cellH/2, W*0.9, 28); }
+}
+
+// ---------- deflection chart ----------
+const ch = $('chart'), cc = ch.getContext('2d');
+function niceStep(range){ const raw = range/3, p = Math.pow(10, Math.floor(Math.log10(raw || 1))), m = raw/p; return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10)*p; }
+const tch = $('tchart'), tcc = tch.getContext('2d');
+function drawChart(){ drawChartFocus(); drawChartTrials(); }
+function axes(cc, L, T, W, H, B, Rp, maxD, Y){
+  cc.font = '400 22px "IBM Plex Mono", monospace'; cc.fillStyle = COL.muted; cc.textBaseline = 'middle';
+  cc.strokeStyle = COL.line; cc.lineWidth = 2; cc.beginPath(); cc.moveTo(L, Y(0)); cc.lineTo(W - Rp, Y(0)); cc.stroke();
+  const st_ = niceStep(maxD); cc.textAlign = 'right'; for (let d = -Math.floor(maxD/st_)*st_; d <= maxD; d += st_) cc.fillText((d > 0 ? '+' : '') + Math.round(d), L - 14, Y(d));
+}
+function drawChartFocus(){
+  const W = ch.width, H = ch.height, L = 96, Rp = 24, T = 24, B = 56, p = 1/K;
+  cc.clearRect(0, 0, W, H);
+  const pts = st.cum, secs = Math.max(60, pts.length - 1), env = gn => 1.96*Math.sqrt(gn*p*(1 - p));
+  let maxD = Math.max(20, env(st.gN)*1.3, K === 2 ? 1.96*Math.sqrt(st.n/4)*1.3 : 0); for (const q of pts) maxD = Math.max(maxD, Math.abs(q[1])*1.15, K === 2 ? Math.abs(q[3])*1.15 : 0);
+  const X = t => L + (t/secs)*(W - L - Rp), Y = d => T + (H - T - B)/2 - d/maxD*(H - T - B)/2;
+  sess.sec.forEach((row, i) => { const f = row[K]; if (f >= 0){ cc.fillStyle = pCol(f, .13); cc.fillRect(X(i), T, Math.max(1, X(i + 1) - X(i)), H - T - B); } });
+  axes(cc, L, T, W, H, B, Rp, maxD, Y);
+  cc.textAlign = 'center'; cc.textBaseline = 'top'; const xs = niceStep(secs/1.5); for (let t = 0; t <= secs; t += xs) cc.fillText(mmss(t), X(t), H - B + 14);
+  cc.textAlign = 'left'; cc.textBaseline = 'middle'; cc.fillStyle = COL.gold; cc.fillText('toward my goal', L + 8, T + 14); cc.fillStyle = COL.muted; cc.fillText('away from my goal', L + 8, H - B - 14);
+  cc.strokeStyle = '#3A4170'; cc.lineWidth = 3; cc.setLineDash([10, 8]);
+  for (const sgn of [1, -1]){ cc.beginPath(); cc.moveTo(X(0), Y(0)); if (pts.length > 1) pts.forEach(q => cc.lineTo(X(q[0]), Y(sgn*env(q[2])))); else cc.lineTo(X(secs), Y(0)); cc.stroke(); }
+  cc.setLineDash([]);
+  if (K === 2 && pts.length > 1){ cc.strokeStyle = '#6B7194'; cc.lineWidth = 3; cc.beginPath(); pts.forEach((q, i) => i ? cc.lineTo(X(q[0]), Y(q[3])) : cc.moveTo(X(q[0]), Y(q[3]))); cc.stroke(); }
+  if (pts.length > 1){ cc.strokeStyle = COL.gold; cc.lineWidth = 5; cc.lineJoin = 'round'; cc.beginPath(); pts.forEach((q, i) => i ? cc.lineTo(X(q[0]), Y(q[1])) : cc.moveTo(X(q[0]), Y(q[1]))); cc.stroke();
+    const e = pts[pts.length - 1]; cc.fillStyle = COL.gold; cc.beginPath(); cc.arc(X(e[0]), Y(e[1]), 11, 0, Math.PI*2); cc.fill(); }
+  else { cc.fillStyle = COL.muted; cc.textAlign = 'center'; fitText(cc, 'Press Start and pick a goal. The gold line climbs when the stream favours it.', (L + W - Rp)/2, Y(maxD*0.55), (W - L - Rp)*0.92, 24); }
+  $('chartLab').textContent = 'draws toward your goal · each second counts toward the goal it had then';
+  $('chartLeg').innerHTML = '<span style="--c:var(--gold)">toward my goal</span>' + (K === 2 ? '<span style="--c:#6B7194">1s minus chance</span>' : '') + '<span style="--c:#3A4170">95% chance band</span><span style="--c:rgba(255,255,255,.18)">shading = goal at that moment</span>';
+}
+function drawChartTrials(){
+  const cc = tcc, W = tch.width, H = tch.height, L = 90, Rp = 24, T = 24, B = 56;
+  cc.clearRect(0, 0, W, H);
+  const ser = k => { let n = 0, d = 0; const pts = [[0, 0]]; for (const r of log) if (r.kind === k){ n += r.n; d += r.hits - r.n/2; pts.push([n, d]); } return pts; };
+  const fs = ser('focus'), cs = ser('control'), maxN = Math.max(1000, fs[fs.length - 1][0], cs[cs.length - 1][0]), env = n => 1.96*Math.sqrt(n)/2;
+  let maxD = env(maxN)*1.3; for (const q of fs.concat(cs)) maxD = Math.max(maxD, Math.abs(q[1])*1.15);
+  const X = n => L + (n/maxN)*(W - L - Rp), Y = d => T + (H - T - B)/2 - d/maxD*(H - T - B)/2;
+  axes(cc, L, T, W, H, B, Rp, maxD, Y);
+  cc.textAlign = 'center'; cc.textBaseline = 'top'; const xs = niceStep(maxN/4); for (let n = 0; n <= maxN; n += xs) cc.fillText(n >= 1000 ? (n/1000) + 'k' : n, X(n), H - B + 14);
+  cc.strokeStyle = '#3A4170'; cc.lineWidth = 3; cc.setLineDash([10, 8]);
+  for (const s of [1, -1]){ cc.beginPath(); for (let i = 0; i <= 80; i++){ const n = maxN*i/80; i ? cc.lineTo(X(n), Y(s*env(n))) : cc.moveTo(X(n), Y(0)); } cc.stroke(); }
+  cc.setLineDash([]);
+  for (const [pts, col, w] of [[cs, COL.muted, 3], [fs, COL.gold, 5]]){ if (pts.length < 2) continue; cc.strokeStyle = col; cc.lineWidth = w; cc.beginPath(); pts.forEach((q, i) => i ? cc.lineTo(X(q[0]), Y(q[1])) : cc.moveTo(X(q[0]), Y(q[1]))); cc.stroke(); }
+  if (!log.length){ cc.fillStyle = COL.muted; cc.textAlign = 'center'; cc.textBaseline = 'middle'; fitText(cc, 'Trials draw here. Above zero beats chance.', (L + W - Rp)/2, T + 30, (W - L - Rp)*0.92, 24); }
+  $('tchartLab').textContent = 'cumulative hits minus chance, in bits';
+  $('tchartLeg').innerHTML = '<span style="--c:var(--gold)">focus trials</span><span style="--c:var(--muted)">control trials</span><span style="--c:#3A4170">95% chance band</span>';
+}
+
+// ---------- song ----------
+let songName = '';
+
+// ---------- generator tick (independent of drawing) ----------
+let last = performance.now(), owed = 0, cnt = 0, rateShown = 0, rateT = performance.now();
+setInterval(() => {
+  const now = performance.now(); owed += Math.min(1.5, (now - last)/1000)*RATE; last = now;
+  let k = Math.floor(owed); owed -= k;
+  while (k-- > 0){
+    const sy = drawSym(); cnt++; pushSym(sy);
+    if (recording){ curRaw[curN] = sy; curC[sy]++; if (++curN >= RATE) addSecond(); }
+    if (run && run.phase === 'trial'){ const b = bit(); run.n++; run.ones += b; }
+    if (disp.bmode === 'deco' && disp.bub && Math.random() < 0.12*disp.bub/100) recent.push({ a: Math.random()*Math.PI*2, r: Math.sqrt(Math.random()), b: sy === 0 ? 1 : 0, life: 1 });
+  }
+  if (now - rateT >= 1000){ rateShown = cnt; cnt = 0; rateT = now; }
+  if (run) advance(now);
+}, 25);
+
+openSession(); buildPoles(); buildFocus(); setRec(false); renderFocus(); renderTrials(); renderHistory(); drawRibbon(); setFocus(focus); drawChart(); applyDispUI(); layoutPlots();
+document.querySelectorAll('.pb').forEach(b => ro.observe(b));
+requestAnimationFrame(frame);
+document.fonts && document.fonts.ready.then(() => { drawRibbon(); drawChart(); renderFocus(); });
+})();
+</script>
+
+</body>
+</html>
