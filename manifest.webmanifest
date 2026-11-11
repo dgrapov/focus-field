@@ -1,0 +1,14 @@
+{
+  "name": "Focus Field",
+  "short_name": "Focus Field",
+  "description": "Can attention lean on chance? A live random-stream focus tool.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#07080F",
+  "theme_color": "#07080F",
+  "icons": [
+    { "src": "assets/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
