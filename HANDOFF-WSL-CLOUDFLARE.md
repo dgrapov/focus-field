@@ -4,6 +4,19 @@
 **Plan doc (human-readable, may not be reachable from WSL):** https://claude.ai/artifact/FuPDW1sLrkzkERYM86kWNY
 Everything you need is in this file; the plan doc is background.
 
+## 0. Local files first, git after
+
+Harold's local files are the source of truth; GitHub is where finished work is published. Work in this order:
+
+1. **Local home:** `/mnt/c/Users/dgrap/Dropbox/MusicGen/tools/focus-field` (Windows: `C:\Users\dgrap\Dropbox\MusicGen\tools\focus-field`). This follows his convention of one folder per tool under `MusicGen/tools/`, next to `live-visualizer` and `lyric-sync`.
+2. **Look before you fetch.** Before reading anything from GitHub, check the local home and the rest of `MusicGen/` for Focus Field files or notes (`grep -ril "focus field\|focus-field" /mnt/c/Users/dgrap/Dropbox/MusicGen`). Read what you find first.
+3. **If the local home doesn't exist yet, create it from git:** `git clone https://github.com/dgrapov/focus-field.git /mnt/c/Users/dgrap/Dropbox/MusicGen/tools/focus-field`. As of this note, no local copy existed; the repo was built in a cloud session.
+4. **If it exists, compare before pulling.** Run `git status` and `git fetch`, then look at the differences with `git log HEAD..origin/main` and `git diff`. If local files hold changes that aren't on GitHub, keep them, commit them locally, and tell Harold before merging. Never overwrite local work with a pull or reset.
+5. **Work and test locally.** Commit locally in small steps, and run `wrangler dev` against the local files.
+6. **Push to GitHub last,** once tests pass. GitHub Pages redeploys from `main` on push.
+
+The `worker/node_modules` and `.wrangler/` folders must be in `.gitignore`. Pause Dropbox syncing for this folder during `npm install` if it slows down, since Dropbox syncs every file the install writes.
+
 ## 1. What this is
 
 Focus Field is a static two-page site that runs a live random stream (500 draws/s from `crypto.getRandomValues`) split between 2 and 8 poles. A person focuses on one pole and the page measures drift against chance. It tests the (unproven) idea that attention can nudge randomness.
@@ -140,7 +153,8 @@ Bump an `APP_VERSION` constant and send it as `app_version`.
 ## 10. Deploy steps
 
 ```bash
-cd ~/focus-field && git pull            # clone first if needed
+cd /mnt/c/Users/dgrap/Dropbox/MusicGen/tools/focus-field   # local home (section 0)
+git status && git fetch                 # compare local vs GitHub before any pull
 cd worker && npm install
 npx wrangler login                      # Harold: browser auth
 npx wrangler whoami
@@ -166,7 +180,7 @@ npx wrangler deploy                     # -> https://focus-field-api.dgrapov.wor
 
 - Don't change the randomizer, the stats shown locally, or the layout beyond the additions above.
 - No secrets or account ids in the repo except `database_id`, which is not secret.
-- Commit to `main` in small commits. GitHub Pages redeploys on push; check the live site after.
+- Local files first, git after (section 0): commit locally in small steps, push to `main` only when tests pass. GitHub Pages redeploys on push; check the live site after.
 - If something in this brief turns out wrong (a Wrangler flag, a limit), do the sensible thing and note it in your report rather than stopping.
 
 ## 13. Report back
