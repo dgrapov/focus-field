@@ -8,9 +8,9 @@ Everything you need is in this file; the plan doc is background.
 
 Harold's local files are the source of truth; GitHub is where finished work is published. Work in this order:
 
-1. **Local home:** `/mnt/c/Users/dgrap/Dropbox/MusicGen/tools/focus-field` (Windows: `C:\Users\dgrap\Dropbox\MusicGen\tools\focus-field`). This follows his convention of one folder per tool under `MusicGen/tools/`, next to `live-visualizer` and `lyric-sync`.
-2. **Look before you fetch.** Before reading anything from GitHub, check the local home and the rest of `MusicGen/` for Focus Field files or notes (`grep -ril "focus field\|focus-field" /mnt/c/Users/dgrap/Dropbox/MusicGen`). Read what you find first.
-3. **If the local home doesn't exist yet, create it from git:** `git clone https://github.com/dgrapov/focus-field.git /mnt/c/Users/dgrap/Dropbox/MusicGen/tools/focus-field`. As of this note, no local copy existed; the repo was built in a cloud session.
+1. **Local home:** `/mnt/c/Users/dgrap/Dropbox/FocusField` (Windows: `C:\Users\dgrap\Dropbox\FocusField`). It is its own top-level Dropbox folder, beside `MusicGen`, because Focus Field is a separate project. Harold created it empty on 2026-11-11 for this.
+2. **Look before you fetch.** Before reading anything from GitHub, check the local home, and `MusicGen/` for older Focus Field notes (`grep -ril "focus field\|focus-field" /mnt/c/Users/dgrap/Dropbox/FocusField /mnt/c/Users/dgrap/Dropbox/MusicGen`). Read what you find first.
+3. **If the local home is empty, fill it from git:** `git clone https://github.com/dgrapov/focus-field.git /mnt/c/Users/dgrap/Dropbox/FocusField` (cloning into an existing empty folder works). As of this note the folder was empty; the repo was built in a cloud session.
 4. **If it exists, compare before pulling.** Run `git status` and `git fetch`, then look at the differences with `git log HEAD..origin/main` and `git diff`. If local files hold changes that aren't on GitHub, keep them, commit them locally, and tell Harold before merging. Never overwrite local work with a pull or reset.
 5. **Work and test locally.** Commit locally in small steps, and run `wrangler dev` against the local files.
 6. **Push to GitHub last,** once tests pass. GitHub Pages redeploys from `main` on push.
@@ -153,7 +153,7 @@ Bump an `APP_VERSION` constant and send it as `app_version`.
 ## 10. Deploy steps
 
 ```bash
-cd /mnt/c/Users/dgrap/Dropbox/MusicGen/tools/focus-field   # local home (section 0)
+cd /mnt/c/Users/dgrap/Dropbox/FocusField                    # local home (section 0)
 git status && git fetch                 # compare local vs GitHub before any pull
 cd worker && npm install
 npx wrangler login                      # Harold: browser auth
