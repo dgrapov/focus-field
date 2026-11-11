@@ -40,6 +40,8 @@ Harold must do these himself (browser or secrets); ask him in the terminal when 
 - `npx wrangler login` (browser OAuth). In WSL, if no browser opens, give him the printed URL to paste into Windows Chrome.
 - `npx wrangler secret put ADMIN_TOKEN`. **He types the value**; don't generate, echo, log or commit it.
 
+**Cloudflare authentication:** use `npx wrangler login` (browser OAuth); no Cloudflare API token is needed for phase 1. Only if the browser login won't work from WSL, Harold creates an API token himself in the dashboard (My Profile → API Tokens → Create Token → "Edit Cloudflare Workers" template, adding **Account · D1 · Edit** if Wrangler reports a missing D1 permission). He then exports it in his shell profile as `CLOUDFLARE_API_TOKEN`, outside the Dropbox folder. Never write a token into the repo, the Dropbox folder, a `.env` that git or Dropbox can see, or the chat.
+
 ## 4. Files to create
 
 ```
