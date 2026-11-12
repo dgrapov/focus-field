@@ -8,7 +8,7 @@
     {
       "binding": "DB",
       "database_name": "focus-field-db",
-      "database_id": "<set after wrangler d1 create>"
+      "database_id": "45dd86d7-de7b-4816-98a0-483178e206df"
     }
   ],
   "vars": {
