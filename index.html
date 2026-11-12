@@ -397,7 +397,7 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } cat
 const APP_VERSION = '1.1.0';
 const DEV = location.hostname === 'localhost';   // a page served from localhost talks to a local `wrangler dev` with Turnstile's test key
 const API_BASE = DEV ? 'http://localhost:8787' : 'https://focus-field-api.dgrapov.workers.dev';
-const TURNSTILE_SITE_KEY = DEV ? '1x00000000000000000000AA' : '';   // public site key; set when the Turnstile widget exists (empty = sharing hidden)
+const TURNSTILE_SITE_KEY = DEV ? '1x00000000000000000000AA' : '0x4AAAAAAF9oxrfRnFcUb0OU';   // public Turnstile site key (widget for dgrapov.github.io); never the secret
 const SHARE_READY = !!(API_BASE && TURNSTILE_SITE_KEY);
 const pid = (() => { let v = load('focusfield.pid', null); if (typeof v !== 'string' || !/^[A-Za-z0-9-]{8,64}$/.test(v)){
   v = crypto.randomUUID ? crypto.randomUUID() : [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''); save('focusfield.pid', v); } return v; })();

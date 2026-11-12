@@ -12,10 +12,10 @@
     }
   ],
   "vars": {
-    // Public Turnstile site key. Cloudflare's always-pass test key until the real widget exists (handoff step 9).
+    // Public Turnstile site key (widget for dgrapov.github.io, Managed mode).
     // The page has its own copy (TURNSTILE_SITE_KEY in index.html); keep the two in step.
     // The SECRET is never put here: production uses `wrangler secret put TURNSTILE_SECRET`,
     // local dev passes Cloudflare's public test secret on the command line (npm run dev:test).
-    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA"
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAF9oxrfRnFcUb0OU"
   }
 }
