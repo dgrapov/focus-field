@@ -104,7 +104,7 @@ footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);paddin
 
   <section>
     <h2>What this tool uses</h2>
-    <p>Every draw comes from your browser's cryptographic random generator (<span class="mono">crypto.getRandomValues</span>), 500 a second, in your own browser. Nothing is sent anywhere. It is seeded from your computer's hardware entropy and then expanded by an algorithm. Bytes are fetched 16 at a time as they are needed, so each outcome is made a few hundredths of a second before you see it, never stored up in advance.</p>
+    <p>Every draw comes from your browser's cryptographic random generator (<span class="mono">crypto.getRandomValues</span>), 500 a second, in your own browser. Nothing is sent anywhere unless you turn on sharing (see <a href="#data">Data and privacy</a>). It is seeded from your computer's hardware entropy and then expanded by an algorithm. Bytes are fetched 16 at a time as they are needed, so each outcome is made a few hundredths of a second before you see it, never stored up in advance.</p>
     <p>That makes it a fair, unpredictable stream, but not a physical noise source like the diode-based generators PEAR used. If an effect needed physical randomness to act on, this stream would be a different test. That difference is worth keeping in mind when you read your results, and a hardware generator may be added later.</p>
   </section>
 
@@ -134,6 +134,13 @@ footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);paddin
     <p>The field, jitter trace, block votes and charts all show the same stream at different time scales. The circle and jitter show the last few seconds. Block votes turn every short block of draws into one vote for the pole that won it, with bigger, brighter marks for bigger margins. The "over time" chart adds up every second toward the goal you held then, against a dashed band that chance stays inside 95% of the time. When the line wanders outside that band briefly, that is expected about one time in twenty.</p>
   </section>
 
+  <section id="data">
+    <h2>Data and privacy</h2>
+    <p>Sharing is off unless you turn it on. With <b>Share my sessions</b> switched on in the Focus panel, each session you finish with <b>Finish &amp; analyse</b> is sent to a small Focus Field server (a Cloudflare Worker with a database) so everyone's sessions can be added up. It shares counts, focus marks and a random id. No personal data.</p>
+    <p>Exactly what is sent: the draws each pole got in every second, which pole you were focusing on in each second (or none), the number of poles, the label you picked (Human, Both or Control), the block size, the app version, and a random id that this browser makes once and keeps in its local storage. No name, email, account, IP address or browser details are stored. The server recomputes the statistics itself, and the <b>Everyone</b> plot shows the combined result for each label.</p>
+    <p>To keep out automated junk, each save is checked with <a href="https://www.cloudflare.com/products/turnstile/">Cloudflare Turnstile</a>, which loads only while sharing is on and usually runs without asking you anything. Turnstile is run by Cloudflare under its <a href="https://www.cloudflare.com/turnstile-privacy-policy/">Turnstile privacy terms</a>. If a save fails, the session stays in this browser and is sent the next time you open the page with sharing on. Turn the switch off at any time to stop sending; your local history is unaffected.</p>
+  </section>
+
   <section>
     <h2>Sources</h2>
     <ul class="refs">
@@ -150,7 +157,7 @@ footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);paddin
     <a class="cta" href="./">Open Focus Field and try it</a>
   </section>
 
-  <footer>Focus Field runs entirely in your browser. Sessions, history and settings are stored only in this browser's local storage. <a href="https://github.com/dgrapov/focus-field">Source on GitHub</a> · MIT license.</footer>
+  <footer>Focus Field runs entirely in your browser. Sessions, history and settings are stored in this browser's local storage, and nothing leaves it unless you turn on sharing. <a href="https://github.com/dgrapov/focus-field">Source on GitHub</a> · MIT license.</footer>
 </main>
 </body>
 </html>

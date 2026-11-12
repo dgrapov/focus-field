@@ -142,6 +142,17 @@ details.tune[open] summary{margin-bottom:10px}
 .mono{font-family:var(--mono)}
 kbd{font:11px var(--mono);border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--muted)}
 .msg{min-height:1.4em;font-size:13px;color:var(--ok)}
+/* opt-in sharing (Focus panel) */
+.share{border-top:1px dashed var(--line);padding-top:12px;gap:8px 16px}
+.sw{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font:500 14px var(--body);color:var(--fg)}
+.sw input{appearance:none;-webkit-appearance:none;margin:0;width:34px;height:20px;border-radius:999px;background:var(--line);position:relative;cursor:pointer;transition:background .15s;flex:none}
+.sw input::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--muted);transition:transform .15s,background .15s}
+.sw input:checked{background:#5A4A12}
+.sw input:checked::after{transform:translateX(14px);background:var(--gold)}
+.share .note{flex-basis:100%;margin:0;font-size:12px;color:var(--muted)}
+.share .note a{color:var(--gold)}
+.share select{padding:4px 8px}
+#tsBox:empty{display:none}
 .report{display:grid;gap:14px}
 .verdict{font-family:var(--display);font-size:clamp(16px,2.4vw,20px);margin:0}
 .verdict.chance{color:var(--muted)} .verdict.notable{color:var(--gold)} .verdict.strong{color:var(--ok)}
@@ -178,6 +189,12 @@ table.h td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowra
             <span class="lab" id="lab-poles">Poles</span>
             <div class="seg" role="group" aria-labelledby="lab-poles" id="polesSeg"></div>
           </div>
+          </div>
+          <div class="row share" id="shareRow" hidden>
+            <label class="sw"><input type="checkbox" id="shareOn"><span>Share my sessions</span></label>
+            <label class="sw" for="shareLabel" style="cursor:default"><span class="lab" style="margin:0">Label</span><select id="shareLabel"><option value="Human">Human</option><option value="Both">Both</option><option value="Control">Control</option></select></label>
+            <p class="note">Shares counts, focus marks and a random id. No personal data. <a href="about.html#data">What is shared</a></p>
+            <div id="tsBox"></div>
           </div>
           <div class="msg" id="fMsg" role="status"></div>
         </div>
@@ -324,6 +341,11 @@ table.h td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowra
         <div class="pb"><canvas id="tchart"></canvas></div>
         <div class="legend" id="tchartLeg"></div>
       </section>
+      <section class="plot" id="p-all" style="--g:.8" aria-label="Everyone">
+        <div class="ph" draggable="true" title="Drag onto another plot to swap"><span class="pt">Everyone</span><span class="ps" id="allLab">shared sessions · combined z per label</span><button class="pbtn" data-act="load" title="Load everyone's totals now">↻</button><button class="pbtn" data-act="mv" title="Move earlier">◀</button><button class="pbtn" data-act="min" title="Minimize to the dock">–</button><button class="pbtn" data-act="exp" title="Expand">⤢</button></div>
+        <div class="pb"><canvas id="everyone" aria-label="Combined z-score per label across everyone's shared sessions"></canvas></div>
+        <div class="legend" id="allLeg"></div>
+      </section>
     </div>
     </div>
   </div>
@@ -332,6 +354,7 @@ table.h td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowra
   <section class="panel report" id="reportPanel" aria-label="Session report" hidden>
     <div class="row" style="justify-content:space-between"><span class="lab" style="margin:0">Session report</span><span class="mono" id="r-when" style="font-size:12px;color:var(--muted)"></span></div>
     <p class="verdict" id="r-verdict"></p>
+    <p class="mono" id="r-shared" style="margin:0;font-size:13px;color:var(--muted)" hidden></p>
     <div class="stats" id="r-stats"></div>
     <div>
       <span class="lab">Seed from this session (SHA-256 of the raw stream, your focus marks and the start time)</span>
@@ -351,7 +374,7 @@ table.h td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowra
     <p><b>The field.</b> At 2 poles the circle fills toward cyan (1) or coral (0) by the z-score of the last few seconds; a quarter of the way up is about z = 1. At 3 or more poles each spoke of the radar shows how far that pole is above or below chance (the solid ring is chance, the dashed rings are ±2), and the glowing orb is pulled toward whichever poles the stream favours.</p>
     <p><b>Jitter</b> is the same lean measured over a short window and drawn continuously, so you can see the wobble between seconds. <b>Changes of leader</b>: pure chance changes the leading pole most seconds (about 30 a minute at 2 poles, about 50 at 6).</p>
     <p><b>Finish &amp; analyse</b> scores every focus second toward the goal it had at that moment (so switching goals is fine), checks the no-focus seconds against chance, compares streaks and leader changes with what chance predicts, and saves the result to the history. The seed is a SHA-256 hash of the session's raw draws, your focus marks and its start time. The short seed (its first 8 hex digits as a number) can seed other randomness later, such as visualizer stacks or a Strudel pattern.</p>
-    <p><b>The research so far.</b> The Princeton PEAR lab reported a deviation of roughly 1 in 10,000 over many years. A three-lab replication in 2000 did not reproduce it, and a 2006 meta-analysis found a tiny overall effect that publication bias could explain. At that size it would take tens of millions of draws (tens of hours) to show, so single sessions will look like noise either way. Sessions and history are kept in this browser. <a href="about.html" style="color:var(--gold)">More on the idea, the evidence and a protocol to try</a>.</p>
+    <p><b>The research so far.</b> The Princeton PEAR lab reported a deviation of roughly 1 in 10,000 over many years. A three-lab replication in 2000 did not reproduce it, and a 2006 meta-analysis found a tiny overall effect that publication bias could explain. At that size it would take tens of millions of draws (tens of hours) to show, so single sessions will look like noise either way. Sessions and history are kept in this browser; nothing is sent unless you turn on <b>Share my sessions</b>. <a href="about.html" style="color:var(--gold)">More on the idea, the evidence and a protocol to try</a>.</p>
   </details>
 </div>
 
@@ -370,6 +393,17 @@ const sg = v => (v >= 0 ? '+' : '') + v.toFixed(2);
 const mmss = s => Math.floor(s/60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e) { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} };
+// ---------- shared data (opt-in; see about.html#data) ----------
+const APP_VERSION = '1.1.0';
+const DEV = location.hostname === 'localhost';   // a page served from localhost talks to a local `wrangler dev` with Turnstile's test key
+const API_BASE = DEV ? 'http://localhost:8787' : 'https://focus-field-api.dgrapov.workers.dev';
+const TURNSTILE_SITE_KEY = DEV ? '1x00000000000000000000AA' : '';   // public site key; set when the Turnstile widget exists (empty = sharing hidden)
+const SHARE_READY = !!(API_BASE && TURNSTILE_SITE_KEY);
+const pid = (() => { let v = load('focusfield.pid', null); if (typeof v !== 'string' || !/^[A-Za-z0-9-]{8,64}$/.test(v)){
+  v = crypto.randomUUID ? crypto.randomUUID() : [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''); save('focusfield.pid', v); } return v; })();
+let share = Object.assign({ on: false, label: 'Human' }, load('focusfield.share', {}));
+if (!['Human', 'Both', 'Control'].includes(share.label)) share.label = 'Human';
+share.on = !!share.on && SHARE_READY;
 function copy(obj, ok, out){ const txt = typeof obj === 'string' ? obj : JSON.stringify(obj); if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => out(ok), () => out('Copy was blocked by this view.')); else out('Copy is not available in this view.'); }
 
 // ---------- display options (per viewer) ----------
@@ -424,8 +458,8 @@ document.querySelectorAll('details.grp').forEach(d => { if (d.id in gOpen) d.ope
 document.querySelectorAll('details.grp > summary button').forEach(b => b.addEventListener('click', e => e.preventDefault()));
 
 // ---------- plot grid: minimize to the dock, others re-flow; swap by dragging or with ◀; expand ----------
-const PNAME = { 'p-vote': 'Block votes', 'p-jit': 'Jitter', 'p-bars': 'Leader share', 'p-rib': 'Per second', 'p-dfoc': 'Over time', 'p-dtri': 'Trials' };
-const P0 = ['p-jit', 'p-vote', 'p-rib', 'p-dfoc', 'p-dtri', 'p-bars'];
+const PNAME = { 'p-vote': 'Block votes', 'p-jit': 'Jitter', 'p-bars': 'Leader share', 'p-rib': 'Per second', 'p-dfoc': 'Over time', 'p-dtri': 'Trials', 'p-all': 'Everyone' };
+const P0 = ['p-jit', 'p-vote', 'p-rib', 'p-dfoc', 'p-dtri', 'p-bars', 'p-all'];
 let pOrder = load('focusfield.plotOrder', P0).filter(id => P0.includes(id)); P0.forEach(id => { if (!pOrder.includes(id)) pOrder.push(id); });
 const pMin = load('focusfield.plotsMin2', { 'p-bars': true });
 let expanded = null;
@@ -460,7 +494,7 @@ document.querySelectorAll('.plot').forEach(pl => {
 });
 $('ov').addEventListener('click', e => { if (e.target === $('ov')) closeExpand(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeExpand(); });
-const redrawFor = { votes: () => drawVotes(), jitter: () => {}, bars: () => renderFocus(), ribbon: () => drawRibbon(), chart: () => drawChart(), tchart: () => drawChart() };
+const redrawFor = { votes: () => drawVotes(), jitter: () => {}, bars: () => renderFocus(), ribbon: () => drawRibbon(), chart: () => drawChart(), tchart: () => drawChart(), everyone: () => drawEveryone() };
 const ro = new ResizeObserver(ents => { for (const en of ents){ const c = en.target.querySelector('canvas'); if (!c) continue; const r = en.contentRect;
   if (r.width < 10 || r.height < 10) continue; const w = Math.round(r.width*2), h = Math.round(r.height*2); if (c.width === w && c.height === h) continue; c.width = w; c.height = h; try { redrawFor[c.id] && redrawFor[c.id](); } catch(err) {} } });
 
@@ -690,8 +724,11 @@ $('fFinish').addEventListener('click', async () => {
   history.unshift({ when: finished, poles: K, seconds: secs, focusSeconds: s.fs, switches: s.sw, z: rep.goal.z, p: rep.goal.p, verdict: verdict[0], baselineP: rep.baseline.p, seed, short });
   history = history.slice(0, 200); save('focusfield.history', history);
   showReport(rep, verdict[1]); renderHistory();
+  const shared = share.on ? { participant_id: pid, label: share.label, poles: K, block_size: disp.blk, app_version: APP_VERSION,
+    per_second_counts: sess.sec.map(r => r.slice(0, K)), focus_marks: sess.sec.map(r => r[K]) } : null;
   sess = { K, started: null, sec: [] }; save(skey(), sess); openSession(); setRec(false); renderFocus(); drawRibbon(); drawChart();
   $('fMsg').textContent = 'Session finished and saved. A new session is ready.';
+  $('r-shared').hidden = !shared; if (shared) shareSession(shared);
   $('reportPanel').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
 });
 function showReport(r, cls){
@@ -974,7 +1011,104 @@ setInterval(() => {
   if (run) advance(now);
 }, 25);
 
+// ---------- shared data: Turnstile, save on finish, unsent retry, Everyone totals ----------
+let tsLoad = null, tsId = null, tsChain = Promise.resolve();
+function loadTurnstile(){
+  if (tsLoad) return tsLoad;
+  tsLoad = new Promise((res, rej) => {
+    window.__ffTurnstile = () => res();
+    const sc = document.createElement('script'); sc.async = true; sc.defer = true;
+    sc.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=__ffTurnstile';
+    sc.onerror = () => { tsLoad = null; sc.remove(); rej(new Error('turnstile')); };
+    document.head.appendChild(sc);
+  });
+  return tsLoad;
+}
+function getToken(){
+  return loadTurnstile().then(() => new Promise((res, rej) => {
+    if (tsId !== null){ try { turnstile.remove(tsId); } catch(e) {} tsId = null; }
+    let done = false; const end = (fn, v) => { if (done) return; done = true; clearTimeout(tm); fn(v); };
+    const tm = setTimeout(() => end(rej, new Error('timeout')), 120000);
+    tsId = turnstile.render($('tsBox'), { sitekey: TURNSTILE_SITE_KEY, action: 'session', theme: 'dark', appearance: 'interaction-only', execution: 'execute', 'response-field': false,
+      callback: t => end(res, t), 'error-callback': () => { end(rej, new Error('turnstile')); return true; }, 'timeout-callback': () => end(rej, new Error('timeout')) });
+    turnstile.execute(tsId);
+  }));
+}
+function freshToken(){ const p = tsChain.then(getToken); tsChain = p.catch(() => {}); return p; }   // one widget at a time
+async function postSession(payload){
+  let token; try { token = await freshToken(); } catch(e) { return { ok: false, retry: true, code: 'turnstile' }; }
+  try {
+    const r = await fetch(API_BASE + '/api/session', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(Object.assign({ turnstile_token: token }, payload)) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.accepted) return { ok: true, j };
+    return { ok: false, retry: r.status >= 500 || j.error === 'bad_token', code: j.error || 'http ' + r.status };
+  } catch(e) { return { ok: false, retry: true, code: 'network' }; }
+}
+const UNSENT = 'focusfield.unsent';
+async function shareSession(payload){
+  const el = $('r-shared'); el.hidden = false; el.textContent = 'Sharing this session…';
+  const r = await postSession(payload);
+  if (r.ok){ const j = r.j;
+    el.textContent = 'Shared · server: ' + (j.goal_n ? `goal z ${sg(+j.goal_z.toFixed(3))}, p ${(+j.goal_p.toFixed(4)).toFixed(3)} over ${j.goal_n.toLocaleString()} draws` : 'no goal set') +
+      (j.base_p != null ? ` · baseline chi² ${j.base_chi2.toFixed(2)}, p ${j.base_p.toFixed(3)}` : '') + (j.flags && j.flags.length ? ' · flagged: ' + j.flags.join(', ') : '');
+    $('fMsg').textContent += ' Shared.'; loadTotals(true);
+  } else if (r.retry){
+    const q = load(UNSENT, []); q.push({ payload, tries: 1 }); save(UNSENT, q.slice(-20));
+    el.textContent = `Not shared yet (${r.code}). Kept in this browser; it will be sent next time the page opens.`;
+    $('fMsg').textContent += ' Not shared yet: kept here and retried next time.';
+  } else el.textContent = `The server did not accept this session (${r.code}).`;
+}
+async function retryUnsent(){
+  const q = load(UNSENT, []); if (!q.length || !share.on) return;
+  const keep = []; let sent = 0;
+  for (const it of q){ const r = await postSession(it.payload); if (r.ok) sent++; else if (r.retry && it.tries < 5) keep.push({ payload: it.payload, tries: it.tries + 1 }); }
+  save(UNSENT, keep.concat(load(UNSENT, []).slice(q.length)));   // keep anything queued while this ran
+  if (sent){ $('fMsg').textContent = `Shared ${sent} earlier session${sent === 1 ? '' : 's'} that had not been sent.`; loadTotals(true); }
+  else if (keep.length) $('fMsg').textContent = `${keep.length} finished session${keep.length === 1 ? '' : 's'} not shared yet; will retry next time.`;
+}
+function applyShareUI(){ $('shareRow').hidden = !SHARE_READY; $('shareOn').checked = share.on; $('shareLabel').value = share.label; }
+$('shareOn').addEventListener('change', e => { share.on = e.target.checked && SHARE_READY; save('focusfield.share', share); applyShareUI();
+  if (share.on){ loadTurnstile().catch(() => {}); retryUnsent(); loadTotals(true); } else drawEveryone(); });
+$('shareLabel').addEventListener('change', e => { share.label = e.target.value; save('focusfield.share', share); });
+
+let allData = null, allErr = false, allWanted = false;
+async function loadTotals(force){
+  if (!SHARE_READY || !(share.on || allWanted)) return;
+  if (!force && (document.hidden || (pMin['p-all'] && expanded !== $('p-all')))) return;
+  try { const r = await fetch(API_BASE + '/api/totals', force ? { cache: 'no-store' } : {}); if (!r.ok) throw new Error(String(r.status)); allData = await r.json(); allErr = false; }
+  catch(e) { allErr = true; }
+  drawEveryone();
+}
+document.querySelector('#p-all [data-act=load]').addEventListener('click', () => { allWanted = true; loadTotals(true); drawEveryone(); });
+setInterval(() => loadTotals(false), 60000);
+const ac = $('everyone'), ax = ac.getContext('2d');
+const ALLC = { Human: COL.gold, Both: COL.one, Control: COL.muted };
+function drawEveryone(){
+  const W = ac.width, H = ac.height; ax.clearRect(0, 0, W, H); if (W < 20 || H < 20) return;
+  const L = 84, Rp = 16, T = 18, B = 70;
+  const when = allData ? new Date(allData.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  $('allLeg').innerHTML = allData ? `<span style="--c:#3A4170">±1.96 (p &lt; .05)</span><span style="--c:transparent">${allErr ? 'can’t reach the server · totals from ' : 'updated '}${when}</span>` : '';
+  if (!allData){
+    const msg = !SHARE_READY ? 'Shared data is not set up yet' : !(share.on || allWanted) ? 'Turn on Share my sessions, or press ↻, to load everyone’s totals' : allErr ? 'Can’t reach the shared-data server right now' : 'Loading everyone’s totals…';
+    ax.fillStyle = COL.muted; ax.textAlign = 'center'; ax.textBaseline = 'middle'; fitText(ax, msg, W/2, H/2, W*0.9, 24); return;
+  }
+  const labs = allData.labels; let YM = 3; for (const l of labs) if (l.z != null) YM = Math.max(YM, Math.abs(l.z)*1.2);
+  const Y = v => T + (H - T - B)/2 - v/YM*(H - T - B)/2;
+  ax.font = '400 22px "IBM Plex Mono", monospace'; ax.textAlign = 'right'; ax.textBaseline = 'middle'; ax.lineWidth = 2;
+  for (const v of [-1.96, 0, 1.96]){ ax.strokeStyle = v ? '#3A4170' : COL.line; ax.setLineDash(v ? [10, 8] : []); ax.beginPath(); ax.moveTo(L, Y(v)); ax.lineTo(W - Rp, Y(v)); ax.stroke();
+    ax.fillStyle = COL.muted; ax.fillText(v ? (v > 0 ? '+' : '') + v.toFixed(2) : '0', L - 12, Y(v)); }
+  ax.setLineDash([]);
+  const bw = (W - L - Rp)/labs.length;
+  labs.forEach((l, i) => { const x = L + i*bw, mid = x + bw/2;
+    if (l.z != null){ const y0 = Y(0), y1 = Y(l.z); ax.fillStyle = ALLC[l.label] || COL.muted; ax.globalAlpha = .85; ax.fillRect(x + bw*.25, Math.min(y0, y1), bw*.5, Math.max(3, Math.abs(y1 - y0))); ax.globalAlpha = 1;
+      ax.font = '500 22px "IBM Plex Mono", monospace'; ax.fillStyle = '#E6E9F5'; ax.textAlign = 'center'; ax.textBaseline = l.z >= 0 ? 'bottom' : 'top'; ax.fillText(sg(l.z), mid, l.z >= 0 ? y1 - 6 : y1 + 6); }
+    ax.textAlign = 'center'; ax.textBaseline = 'top';
+    ax.fillStyle = ALLC[l.label] || COL.muted; fitText(ax, l.label, mid, H - B + 8, bw*.95, 24);
+    ax.fillStyle = COL.muted; fitText(ax, l.sessions ? `${l.sessions} session${l.sessions === 1 ? '' : 's'} · p ${l.p == null ? '—' : l.p.toFixed(3)}` : 'no sessions yet', mid, H - B + 38, bw*.95, 20); });
+}
+
 openSession(); buildPoles(); buildFocus(); setRec(false); renderFocus(); renderTrials(); renderHistory(); drawRibbon(); setFocus(focus); drawChart(); applyDispUI(); layoutPlots();
+applyShareUI(); drawEveryone(); if (share.on){ loadTurnstile().catch(() => {}); retryUnsent(); loadTotals(true); }
 document.querySelectorAll('.pb').forEach(b => ro.observe(b));
 requestAnimationFrame(frame);
 document.fonts && document.fonts.ready.then(() => { drawRibbon(); drawChart(); renderFocus(); });
