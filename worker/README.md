@@ -11,7 +11,7 @@ Live URL once deployed: `https://focus-field-api.dgrapov.workers.dev`.
 | `GET` | `/api/totals` | Per label (`Human`, `Both`, `Control`): sessions, seconds, goal draws, goal hits, Stouffer z (weighted by draws) and one-sided p. Cached 60 s. |
 
 Gatekeeping: the `Origin` must be `https://dgrapov.github.io` or `http://localhost:<port>`, and every POST
-carries a Cloudflare Turnstile token that the Worker verifies with `TURNSTILE_SECRET`. Errors are short codes
+carries a Cloudflare Turnstile token that the Worker verifies with `TURNSTILE_SECRET`; siteverify must report the hostname `dgrapov.github.io` (skipped only for test secrets, which are themselves refused for any `https://` origin). Errors are short codes
 only: `bad_origin` (403), `bad_token` (403), `bad_input` (400, or 413 for a body over 1 MB).
 
 The Worker recomputes every statistic from the raw per-second counts; client numbers are never trusted.

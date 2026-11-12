@@ -20,6 +20,7 @@ export interface Env {
 const MAX_BODY = 1_000_000;
 const TOTALS_TTL = 60;
 const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+const SITE_HOSTNAME = 'dgrapov.github.io';
 
 function cors(origin: string | null): Record<string, string> {
   if (!originAllowed(origin)) return {};
@@ -43,7 +44,8 @@ const fail = (code: string, status: number, origin: string | null) => json({ acc
 async function verifyTurnstile(env: Env, token: string, origin: string, ip: string | null): Promise<boolean> {
   const secret = env.TURNSTILE_SECRET;
   if (!secret) return false;                                                    // fail closed
-  if (TEST_SECRETS.has(secret) && origin.startsWith('https://')) return false;  // test keys only ever for localhost
+  const test = TEST_SECRETS.has(secret);
+  if (test && origin.startsWith('https://')) return false;                     // test keys only ever for localhost
   const form = new FormData();
   form.append('secret', secret);
   form.append('response', token);
@@ -51,8 +53,10 @@ async function verifyTurnstile(env: Env, token: string, origin: string, ip: stri
   try {
     const r = await fetch(SITEVERIFY, { method: 'POST', body: form, signal: AbortSignal.timeout(8000) });
     if (!r.ok) return false;
-    const out = (await r.json()) as { success?: boolean };
-    return out.success === true;
+    const out = (await r.json()) as { success?: boolean; hostname?: string };
+    if (out.success !== true) return false;
+    // A real token must have been issued on the site itself. Test secrets report a placeholder hostname, so skip it there.
+    return test || out.hostname === SITE_HOSTNAME;
   } catch {
     return false;
   }
