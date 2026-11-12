@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "focus-field-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-20",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "focus-field-db",
+      "database_id": "<set after wrangler d1 create>"
+    }
+  ],
+  "vars": {
+    // Public Turnstile site key. Cloudflare's always-pass test key until the real widget exists (handoff step 9).
+    // The page has its own copy (TURNSTILE_SITE_KEY in index.html); keep the two in step.
+    // The SECRET is never put here: production uses `wrangler secret put TURNSTILE_SECRET`,
+    // local dev passes Cloudflare's public test secret on the command line (npm run dev:test).
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA"
+  }
+}

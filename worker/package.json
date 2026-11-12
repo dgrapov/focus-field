@@ -1,0 +1,20 @@
+{
+  "name": "focus-field-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared-data backend for Focus Field: one Cloudflare Worker + one D1 table",
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:test": "wrangler dev --var TURNSTILE_SECRET:1x0000000000000000000000000000000AA",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "test:local": "node test/local-api.mjs",
+    "db:local": "wrangler d1 execute focus-field-db --local --file=./schema.sql",
+    "db:remote": "wrangler d1 execute focus-field-db --remote --file=./schema.sql"
+  },
+  "devDependencies": {
+    "vitest": "4.1.12",
+    "wrangler": "4.154.0"
+  }
+}
