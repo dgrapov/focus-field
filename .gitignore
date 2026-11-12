@@ -2,3 +2,8 @@ node_modules/
 .wrangler/
 .dev.vars
 *.log
+
+# Development notes and agent handoffs stay local (Dropbox/FocusField/dev), never on GitHub
+dev/
+HANDOFF*.md
+*.local.md
