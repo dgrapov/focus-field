@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://dgrapov.github.io/focus-field/"><img alt="Live on GitHub Pages" src="https://img.shields.io/badge/live-GitHub%20Pages-19E6FF?style=flat-square&labelColor=0F1220"></a>
   <img alt="Runs in your browser" src="https://img.shields.io/badge/runs-in%20your%20browser-FFC23A?style=flat-square&labelColor=0F1220">
-  <img alt="No tracking" src="https://img.shields.io/badge/data-stays%20local-B6FF3B?style=flat-square&labelColor=0F1220">
+  <img alt="Local or shared data" src="https://img.shields.io/badge/data-local%20or%20shared-B6FF3B?style=flat-square&labelColor=0F1220">
   <img alt="No build step" src="https://img.shields.io/badge/build-none-8A90AE?style=flat-square&labelColor=0F1220">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-FF5A2E?style=flat-square&labelColor=0F1220"></a>
 </p>
@@ -55,7 +55,7 @@ It tests an old, unproven idea: that the attention of a conscious observer can n
   </tr>
   <tr>
     <td valign="top"><img src="assets/icons/private.svg" width="44" alt=""></td>
-    <td><b>Private by design.</b> Everything runs in your browser. Nothing is sent to a server; sessions, history and settings live in your browser's local storage.</td>
+    <td><b>Local or shared.</b> Everything runs in your browser, and your sessions, history and settings live in its local storage. Turn on <b>Share my sessions</b> to add finished sessions to the global experiment; with it off, nothing leaves your browser.</td>
   </tr>
 </table>
 
@@ -71,6 +71,20 @@ From 1979 to 2007 the Princeton Engineering Anomalies Research lab reported that
 
 At the size PEAR reported, an effect would need around 30 hours of recording to stand out, so single sessions will almost always look like noise. The [About page](https://dgrapov.github.io/focus-field/about.html) covers the history, what "observer" does and doesn't mean in physics, and a seven-step protocol for testing it without fooling yourself.
 
+## Local or shared: join the global experiment
+
+Every session is analysed in your browser either way. What changes is whether it counts toward the pooled result.
+
+- **Local:** with **Share my sessions** off, nothing is sent anywhere. Your sessions stay in your browser's storage.
+- **Shared:** with it on, each finished session goes to the Focus Field API once. A shared session carries the per-second counts, your focus marks, the label you chose (Human, Both or Control), the app version and a random id made by your browser. It carries no name, email or account.
+- **The server recomputes your result.** It checks that the session is plausible and recomputes z and p from the raw counts. Your browser only sends counts, never its own statistics.
+- **Combined results:** the **Everyone** plot shows the combined z for each label against the ±1.96 chance lines, refreshed every minute.
+- **Bot check:** sharing uses Cloudflare Turnstile to keep bots out. The API stores no IP addresses or user agents.
+
+The details are in [Data and privacy](https://dgrapov.github.io/focus-field/about.html#data). The API is a small Cloudflare Worker with a D1 database, in [`worker/`](worker/).
+
+Pooling matters because a real effect at the size PEAR reported would need tens of hours of data. One person rarely records that much, but many people together can.
+
 ## How the randomness works
 
 - Every draw comes from `crypto.getRandomValues`, the browser's cryptographic generator, seeded from your computer's hardware entropy.
@@ -80,7 +94,7 @@ At the size PEAR reported, an effect would need around 30 hours of recording to 
 
 ## Run it yourself
 
-There is no build step. The site is two static HTML files.
+There is no build step. The site is two static HTML files; the optional sharing API lives in [`worker/`](worker/) and has its own README.
 
 ```bash
 git clone https://github.com/dgrapov/focus-field.git
@@ -91,6 +105,14 @@ python3 -m http.server 8000   # then open http://localhost:8000
 Opening `index.html` directly in a browser also works.
 
 ## Roadmap
+
+- **Results page:** a public analysis of the shared data. It will show:
+  - the combined z for each label, plus a cumulative-z curve over time;
+  - a funnel plot of every random id against its amount of data;
+  - a leaderboard of the most influential ids.
+
+  The leaderboard ranks by combined z, counts only ids with enough data, and is drawn inside the band that pure chance produces, so luck looks like luck.
+- **AI participants through an MCP server.** The server draws the random numbers only after an agent has placed its attention on the outcome and logged how it did so. Each attention method is then scored against its own rest blocks.
 
 - Hardware random source through Web Serial (TrueRNG, OneRNG), with each session recording which source it used
 - Download and load session reports and history as files
