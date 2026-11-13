@@ -52,12 +52,14 @@ async function verifyTurnstile(env: Env, token: string, origin: string, ip: stri
   if (ip) form.append('remoteip', ip);                                          // passed through, never stored
   try {
     const r = await fetch(SITEVERIFY, { method: 'POST', body: form, signal: AbortSignal.timeout(8000) });
-    if (!r.ok) return false;
-    const out = (await r.json()) as { success?: boolean; hostname?: string };
-    if (out.success !== true) return false;
+    if (!r.ok) { console.log('turnstile_http', r.status); return false; }
+    const out = (await r.json()) as { success?: boolean; hostname?: string; 'error-codes'?: string[] };
     // A real token must have been issued on the site itself. Test secrets report a placeholder hostname, so skip it there.
-    return test || out.hostname === SITE_HOSTNAME;
-  } catch {
+    const good = out.success === true && (test || out.hostname === SITE_HOSTNAME);
+    if (!good) console.log('turnstile_reject', JSON.stringify({ success: out.success, hostname: out.hostname, codes: out['error-codes'] }));   // no secret, token or IP
+    return good;
+  } catch (e) {
+    console.log('turnstile_error', e instanceof Error ? e.name : 'unknown');
     return false;
   }
 }
