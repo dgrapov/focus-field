@@ -20,8 +20,7 @@
 <meta name="twitter:image" content="https://dgrapov.github.io/focus-field/assets/social-card.png">
 <meta name="description" content="A live random stream split between 2 to 8 poles. Focus on one and see whether the stream leans your way.">
 <style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}</style>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/fonts.css">
 <style>
 /* Layout: two columns. Left: focus controls, the live field (its tuning folds open beneath it), then trials and session numbers (focus session, trials with its setup beside Start, numbers, tuning).
    Right: a 2-column plot grid; minimized plots wait in a dock and the rest re-flow to fill; drag titles to swap; expand any plot full screen.
@@ -193,7 +192,7 @@ table.h td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowra
           <div class="row share" id="shareRow" hidden>
             <label class="sw"><input type="checkbox" id="shareOn"><span>Share my sessions</span></label>
             <label class="sw" for="shareLabel" style="cursor:default"><span class="lab" style="margin:0">Label</span><select id="shareLabel"><option value="Human">Human</option><option value="Both">Both</option><option value="Control">Control</option></select></label>
-            <p class="note"><b style="color:var(--fg)">Join the global experiment:</b> each session you finish adds to everyone's pooled result and the leaderboard. Shares counts, focus marks and a random id. No personal data. <a href="about.html#data">What is shared</a> · <a href="results.html">Results &amp; leaderboard</a></p>
+            <p class="note"><b style="color:var(--fg)">You're part of the global experiment:</b> each session you finish adds to everyone's pooled result and the leaderboard. Shares counts, focus marks and a random id. No personal data. <a href="about.html#data">What is shared</a> · <a href="results.html">Results &amp; leaderboard</a></p>
             <div id="tsBox"></div>
           </div>
           <div class="msg" id="fMsg" role="status"></div>
@@ -374,7 +373,7 @@ table.h td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowra
     <p><b>The field.</b> At 2 poles the circle fills toward cyan (1) or coral (0) by the z-score of the last few seconds; a quarter of the way up is about z = 1. At 3 or more poles each spoke of the radar shows how far that pole is above or below chance (the solid ring is chance, the dashed rings are ±2), and the glowing orb is pulled toward whichever poles the stream favours.</p>
     <p><b>Jitter</b> is the same lean measured over a short window and drawn continuously, so you can see the wobble between seconds. <b>Changes of leader</b>: pure chance changes the leading pole most seconds (about 30 a minute at 2 poles, about 50 at 6).</p>
     <p><b>Finish &amp; analyse</b> scores every focus second toward the goal it had at that moment (so switching goals is fine), checks the no-focus seconds against chance, compares streaks and leader changes with what chance predicts, and saves the result to the history. The seed is a SHA-256 hash of the session's raw draws, your focus marks and its start time. The short seed (its first 8 hex digits as a number) can seed other randomness later, such as visualizer stacks or a Strudel pattern.</p>
-    <p><b>The research so far.</b> The Princeton PEAR lab reported a deviation of roughly 1 in 10,000 over many years. A three-lab replication in 2000 did not reproduce it, and a 2006 meta-analysis found a tiny overall effect that publication bias could explain. At that size it would take tens of millions of draws (tens of hours) to show, so single sessions will look like noise either way. Sessions and history are kept in this browser; nothing is sent unless you turn on <b>Share my sessions</b>. Because one person rarely records tens of hours, sharing is how this gets tested: every shared session joins the global experiment on the <a href="results.html" style="color:var(--gold)">Results &amp; leaderboard</a> page. <a href="about.html" style="color:var(--gold)">More on the idea, the evidence and a protocol to try</a>.</p>
+    <p><b>The research so far.</b> The Princeton PEAR lab reported a deviation of roughly 1 in 10,000 over many years. A three-lab replication in 2000 did not reproduce it, and a 2006 meta-analysis found a tiny overall effect that publication bias could explain. At that size it would take tens of millions of draws (tens of hours) to show, so single sessions will look like noise either way. Sessions and history are kept in this browser. Finished sessions are also shared with the global experiment unless you switch off <b>Share my sessions</b>. Because one person rarely records tens of hours, sharing is how this gets tested: every shared session joins the global experiment on the <a href="results.html" style="color:var(--gold)">Results &amp; leaderboard</a> page. <a href="about.html" style="color:var(--gold)">More on the idea, the evidence and a protocol to try</a>.</p>
   </details>
 </div>
 
@@ -401,7 +400,7 @@ const TURNSTILE_SITE_KEY = DEV ? '1x00000000000000000000AA' : '0x4AAAAAAF9oxrfRn
 const SHARE_READY = !!(API_BASE && TURNSTILE_SITE_KEY);
 const pid = (() => { let v = load('focusfield.pid', null); if (typeof v !== 'string' || !/^[A-Za-z0-9-]{8,64}$/.test(v)){
   v = crypto.randomUUID ? crypto.randomUUID() : [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''); save('focusfield.pid', v); } return v; })();
-let share = Object.assign({ on: false, label: 'Human' }, load('focusfield.share', {}));
+let share = Object.assign({ on: true, label: 'Human' }, load('focusfield.share', {}));   // on by default; switching it off is remembered
 if (!['Human', 'Both', 'Control'].includes(share.label)) share.label = 'Human';
 share.on = !!share.on && SHARE_READY;
 function copy(obj, ok, out){ const txt = typeof obj === 'string' ? obj : JSON.stringify(obj); if (navigator.clipboard) navigator.clipboard.writeText(txt).then(() => out(ok), () => out('Copy was blocked by this view.')); else out('Copy is not available in this view.'); }
@@ -1089,7 +1088,7 @@ function drawEveryone(){
   const when = allData ? new Date(allData.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
   $('allLeg').innerHTML = allData ? `<span style="--c:#3A4170">±1.96 (p &lt; .05)</span><span style="--c:transparent">${allErr ? 'can’t reach the server · totals from ' : 'updated '}${when}</span>` : '';
   if (!allData){
-    const msg = !SHARE_READY ? 'Shared data is not set up yet' : !(share.on || allWanted) ? 'Turn on Share my sessions, or press ↻, to load everyone’s totals' : allErr ? 'Can’t reach the shared-data server right now' : 'Loading everyone’s totals…';
+    const msg = !SHARE_READY ? 'Shared data is not set up yet' : !(share.on || allWanted) ? 'Sharing is off. Press ↻ to load everyone’s totals' : allErr ? 'Can’t reach the shared-data server right now' : 'Loading everyone’s totals…';
     ax.fillStyle = COL.muted; ax.textAlign = 'center'; ax.textBaseline = 'middle'; fitText(ax, msg, W/2, H/2, W*0.9, 24); return;
   }
   const labs = allData.labels; let YM = 3; for (const l of labs) if (l.z != null) YM = Math.max(YM, Math.abs(l.z)*1.2);

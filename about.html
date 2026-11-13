@@ -19,8 +19,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://dgrapov.github.io/focus-field/assets/social-card.png">
 <meta name="description" content="The idea behind Focus Field: can the attention of a conscious observer lean on a random process? What has been tried, what was found, and a protocol to test it yourself.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/fonts.css">
 <style>
 /* Layout: a single reading column in the same dark instrument world as the tool. One coin-like 1·0 mark, then plain sections. */
 :root{
@@ -104,7 +103,7 @@ footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);paddin
 
   <section>
     <h2>What this tool uses</h2>
-    <p>Every draw comes from your browser's cryptographic random generator (<span class="mono">crypto.getRandomValues</span>), 500 a second, in your own browser. Nothing is sent anywhere unless you turn on sharing (see <a href="#data">Data and privacy</a>). It is seeded from your computer's hardware entropy and then expanded by an algorithm. Bytes are fetched 16 at a time as they are needed, so each outcome is made a few hundredths of a second before you see it, never stored up in advance.</p>
+    <p>Every draw comes from your browser's cryptographic random generator (<span class="mono">crypto.getRandomValues</span>), 500 a second, in your own browser. Finished sessions are shared with the global experiment unless you switch sharing off (see <a href="#data">Data and privacy</a>). It is seeded from your computer's hardware entropy and then expanded by an algorithm. Bytes are fetched 16 at a time as they are needed, so each outcome is made a few hundredths of a second before you see it, never stored up in advance.</p>
     <p>That makes it a fair, unpredictable stream, but not a physical noise source like the diode-based generators PEAR used. If an effect needed physical randomness to act on, this stream would be a different test. That difference is worth keeping in mind when you read your results, and a hardware generator may be added later.</p>
   </section>
 
@@ -136,7 +135,7 @@ footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);paddin
 
   <section id="data">
     <h2>Data and privacy</h2>
-    <p>Sharing is off unless you turn it on. With <b>Share my sessions</b> switched on in the Focus panel, each session you finish with <b>Finish &amp; analyse</b> is sent to a small Focus Field server (a Cloudflare Worker with a database) so everyone's sessions can be added up. It shares counts, focus marks and a random id. No personal data.</p>
+    <p>Sharing is on by default, and you can switch it off at any time with <b>Share my sessions</b> in the Focus panel; the tool remembers that choice. While it is on, each session you finish with <b>Finish &amp; analyse</b> is sent to a small Focus Field server (a Cloudflare Worker with a database) so everyone's sessions can be added up. It shares counts, focus marks and a random id. No personal data.</p>
     <p>Exactly what is sent: the draws each pole got in every second, which pole you were focusing on in each second (or none), the number of poles, the label you picked (Human, Both or Control), the block size, the app version, and a random id that this browser makes once and keeps in its local storage. The Focus Field database stores no names, emails, accounts, IP addresses or browser details. Cloudflare, which runs the server, may briefly keep request details (such as IP addresses) in its Worker logs. The server recomputes the statistics itself, and the <b>Everyone</b> plot shows the combined result for each label. The <a href="results.html">Results &amp; leaderboard</a> page shows the pooled analysis; ids there appear only as a 6-character tag made by hashing the random id.</p>
     <p>To keep out automated junk, each save is checked with <a href="https://www.cloudflare.com/products/turnstile/">Cloudflare Turnstile</a>, which loads only while sharing is on and usually runs without asking you anything. Turnstile is run by Cloudflare under its <a href="https://www.cloudflare.com/turnstile-privacy-policy/">Turnstile privacy terms</a>. If a save fails, the session stays in this browser and is sent the next time you open the page with sharing on. Turn the switch off at any time to stop sending; your local history is unaffected.</p>
   </section>
@@ -157,7 +156,7 @@ footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);paddin
     <a class="cta" href="./">Open Focus Field and try it</a>
   </section>
 
-  <footer>Focus Field runs entirely in your browser. Sessions, history and settings are stored in this browser's local storage, and nothing leaves it unless you turn on sharing. <a href="https://github.com/dgrapov/focus-field">Source on GitHub</a> · MIT license.</footer>
+  <footer>Focus Field runs entirely in your browser. Sessions, history and settings are stored in this browser's local storage, and only finished sessions leave it, while sharing is on. <a href="https://github.com/dgrapov/focus-field">Source on GitHub</a> · MIT license.</footer>
 </main>
 </body>
 </html>

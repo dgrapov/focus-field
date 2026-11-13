@@ -57,7 +57,7 @@ It tests an old, unproven idea: that the attention of a conscious observer can n
   </tr>
   <tr>
     <td valign="top"><img src="assets/icons/private.svg" width="44" alt=""></td>
-    <td><b>Local or shared.</b> Everything runs in your browser, and your sessions, history and settings live in its local storage. Turn on <b>Share my sessions</b> to add finished sessions to the global experiment; with it off, nothing leaves your browser.</td>
+    <td><b>Local or shared.</b> Everything runs in your browser, and your sessions, history and settings live in its local storage. <b>Share my sessions</b> is on by default and adds each finished session to the global experiment; switch it off and nothing leaves your browser.</td>
   </tr>
 </table>
 
@@ -77,8 +77,8 @@ At the size PEAR reported, an effect would need around 30 hours of recording to 
 
 Every session is analysed in your browser either way. What changes is whether it counts toward the pooled result.
 
-- **Local:** with **Share my sessions** off, nothing is sent anywhere. Your sessions stay in your browser's storage.
-- **Shared:** with it on, each finished session goes to the Focus Field API once. A shared session carries the per-second counts, your focus marks, the label you chose (Human, Both or Control), the app version and a random id made by your browser. It carries no name, email or account.
+- **Local:** switch **Share my sessions** off and nothing is sent anywhere. Your sessions stay in your browser's storage.
+- **Shared (the default):** each finished session goes to the Focus Field API once. A shared session carries the per-second counts, your focus marks, the label you chose (Human, Both or Control), the app version and a random id made by your browser. It carries no name, email or account.
 - **The server recomputes your result.** It checks that the session is plausible and recomputes z and p from the raw counts. Your browser only sends counts, never its own statistics.
 - **Combined results:** the **Everyone** plot shows the combined z for each label against the ±1.96 chance lines, refreshed every minute.
 - **[Results & leaderboard](https://dgrapov.github.io/focus-field/results.html):** a page with the pooled analysis. It shows:
@@ -89,10 +89,11 @@ Every session is analysed in your browser either way. What changes is whether it
 
   A Control board beside them shows what pure luck looks like.
 - **Bot check:** sharing uses Cloudflare Turnstile to keep bots out. The API stores no IP addresses or user agents.
+- **No third-party fonts:** fonts are served from this site, so the pages make no requests to Google.
 
 The details are in [Data and privacy](https://dgrapov.github.io/focus-field/about.html#data). The API is a small Cloudflare Worker with a D1 database, in [`worker/`](worker/).
 
-Pooling matters because a real effect at the size PEAR reported would need tens of hours of data. One person rarely records that much, but many people together can. **Turn on sharing and your sessions count.**
+Pooling matters because a real effect at the size PEAR reported would need tens of hours of data. One person rarely records that much, but many people together can. **Leave sharing on and your sessions count.**
 
 ## How the randomness works
 

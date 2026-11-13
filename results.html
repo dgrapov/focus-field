@@ -16,8 +16,7 @@
 <meta property="og:image" content="https://dgrapov.github.io/focus-field/assets/social-card.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="description" content="Pooled results of the Focus Field experiment: can attention lean on chance? Combined z per label, cumulative z over time, a funnel plot and fair leaderboards.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/fonts.css">
 <style>
 /* Same dark instrument world as the tool and About page; a wider column so charts and tables have room. */
 :root{
@@ -196,7 +195,7 @@ function svgIn(id, w, h){ const host = $(id); host.innerHTML = ''; const s = el(
 // Horizontal bars: final combined z per label, against ±1.96.
 function drawLabels(){
   const rows = ['Human', 'Both', 'Control'].map(l => { const c = data.cumulative[l] || []; const last = c[c.length - 1]; return { l, z: last ? last.z : null, s: last ? last.sessions : 0, d: last ? last.draws : 0 }; });
-  if (!rows.some(r => r.s > 0)) { $('labels').innerHTML = '<div class="empty">No shared sessions yet. Turn on Share my sessions in the tool and finish a session to start the pool.</div>'; return; }
+  if (!rows.some(r => r.s > 0)) { $('labels').innerHTML = '<div class="empty">No shared sessions yet. Finish a session in the tool with Share my sessions on to start the pool.</div>'; return; }
   const W = widthOf('labels'), rowH = 46, H = rows.length * rowH + 28, x0 = W < 520 ? 110 : 170, x1 = W - 20;
   const lim = Math.max(3, ...rows.map(r => Math.abs(r.z || 0) + 0.5));
   const X = z => x0 + (z + lim) / (2 * lim) * (x1 - x0);
