@@ -8,8 +8,8 @@ Live URL once deployed: `https://focus-field-api.dgrapov.workers.dev`.
 | Method | Path | Notes |
 |---|---|---|
 | `POST` | `/api/session` | One finished session. Body (max 1 MB): `{turnstile_token, participant_id, label, poles, block_size, app_version, per_second_counts, focus_marks}`. Returns `{accepted, id, goal_n, goal_hits, goal_z, goal_p, base_chi2, base_p, flags}`. |
-| `GET` | `/api/totals` | Per label (`Human`, `Both`, `Control`): sessions, seconds, goal draws, goal hits, Stouffer z (weighted by draws) and one-sided p. Cached 60 s. |
-| `GET` | `/api/results` | For `results.html`: top-10 boards (best overall by Stouffer z, ids with ≥ 30 min focus; best single run, corrected for the number of runs, runs ≥ 60 s) for participants (Human + Both) and Control, each with a luck line; cumulative z per label by day; funnel points (draws, z) per id. Ids are shown only as `sha256(id)[0:6]`. Cached 60 s. |
+| `GET` | `/api/totals` | Per label (`Human`, `Both`, `Control`): sessions, seconds, goal draws, goal hits, Stouffer z (weighted by draws) and one-sided p. Served from an hourly snapshot. |
+| `GET` | `/api/results` | For `results.html`: top-10 boards (best overall by Stouffer z, ids with ≥ 30 min focus; best single run, corrected for the number of runs, runs ≥ 60 s) for participants (Human + Both) and Control, each with a luck line; cumulative z per label by day; funnel points (draws, z) per id. Ids are shown only as `sha256(id)[0:6]`. Served from an hourly snapshot. |
 
 Gatekeeping: the `Origin` must be `https://dgrapov.github.io` or `http://localhost:<port>`, and every POST
 carries a Cloudflare Turnstile token that the Worker verifies with `TURNSTILE_SECRET`; siteverify must report the hostname `dgrapov.github.io` (skipped only for test secrets, which are themselves refused for any `https://` origin). Errors are short codes
@@ -25,7 +25,8 @@ stats. No IP addresses, user agents or names.
 - `src/stats.ts` normal CDF, chi-square survival, session scoring, Stouffer (pure)
 - `src/results.ts` leaderboards, luck line, cumulative z and funnel for `/api/results` (pure)
 - `src/validate.ts` input checks and the origin allowlist (pure)
-- `schema.sql` the `sessions` table
+- `src/sql.ts` statements for the summary tables and snapshots
+- `schema.sql` the `sessions` table, summary tables and snapshots; `migrate-summary.sql` one-off build of the summaries
 - `test/*.test.ts` unit tests (vitest); `test/local-api.mjs` scripted checks against `wrangler dev`
 
 ## Run locally (no Cloudflare account needed)
@@ -64,9 +65,17 @@ npx wrangler deploy
 Put the real Turnstile site key in `wrangler.jsonc` (`vars.TURNSTILE_SITE_KEY`) and in `index.html`
 (`TURNSTILE_SITE_KEY`). The site key is public; the secret is not.
 
-## Notes
+## Notes: optimised for reads
 
-- `/api/totals` sums per (label, poles) inside D1 and combines with `stoufferFromGroups`, so no session rows
-  leave the database. The query still scans the table; D1 bills rows read, so the 60 s cache matters.
-- The Cache API does nothing on `*.workers.dev`, so totals are also memoised per isolate for 60 s and sent
-  with `Cache-Control: max-age=60`.
+D1's free plan allows 5 million rows read a day, so nothing a visitor does scans `sessions`:
+
+- Each save runs one D1 batch (a single transaction): the session row plus upserts into three small summary
+  tables, `agg_id_poles`, `agg_day` and `agg_runs` (see `src/sql.ts`). They grow with people and days, not sessions.
+- A cron trigger (`7 * * * *` in `wrangler.jsonc`) rebuilds `/api/totals` and `/api/results` from the summary tables
+  into the `snapshots` table once an hour. If no snapshot exists yet, the first GET builds one.
+- GET endpoints read one snapshot row, memoised per Worker copy for 5 minutes, and send `Cache-Control: max-age=600`.
+  Pages poll every 10 minutes.
+- `migrate-summary.sql` creates the summary tables and rebuilds them from `sessions`. Run it once on an existing
+  database, and again any time to recompute from scratch. `test/summary.test.ts` checks, in SQLite, that the
+  per-save upserts equal that rebuild.
+- Test the cron locally: `npx wrangler dev --test-scheduled`, then `curl "http://localhost:8787/__scheduled?cron=7+*+*+*+*"`.

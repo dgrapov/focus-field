@@ -1079,7 +1079,7 @@ async function loadTotals(force){
   drawEveryone();
 }
 document.querySelector('#p-all [data-act=load]').addEventListener('click', () => { allWanted = true; loadTotals(true); drawEveryone(); });
-setInterval(() => loadTotals(false), 60000);
+setInterval(() => loadTotals(false), 10 * 60000);   // the server rebuilds totals hourly; a 10-minute poll is plenty
 const ac = $('everyone'), ax = ac.getContext('2d');
 const ALLC = { Human: COL.gold, Both: COL.one, Control: COL.muted };
 function drawEveryone(){

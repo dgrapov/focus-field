@@ -72,7 +72,7 @@ const zOf = (a: Acc) => (a.den > 0 ? a.num / Math.sqrt(a.den) : null);
 
 export interface IdPolesRow { label: string; pid: string; poles: number; sessions: number; n: number; hits: number }
 export interface RunRow { grp: Group; pid: string; runs: number; best_z: number; best_at: string }
-export interface DayRow { label: string; day: string; poles: number; sessions: number; n: number; hits: number }
+export interface DayRow { label: string; day: string; poles: number; sessions: number; seconds?: number; n: number; hits: number }
 
 export interface OverallEntry { tag: string; focus_hours: number; sessions: number; effect_per_10k: number; z: number; p: number }
 export interface RunEntry { tag: string; best_z: number; runs: number; adjusted_z: number; adjusted_p: number; date: string }

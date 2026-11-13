@@ -1,16 +1,19 @@
 // Focus Field shared-data API: POST /api/session, GET /api/totals, GET /api/results.
-// One D1 table (schema.sql). Gatekeeping: Origin allowlist + Cloudflare Turnstile on every POST.
+// D1 tables in schema.sql. Gatekeeping: Origin allowlist + Cloudflare Turnstile on every POST.
+// Read-optimised: each save also updates small summary tables; an hourly cron rebuilds totals and results
+// into one snapshot row each; GET endpoints read that row (memoised per Worker copy). Nothing a visitor
+// does scans the sessions table.
 
 import { sessionStats, stoufferFromGroups } from './stats';
 import { validateSession, originAllowed, TEST_SECRETS, LABELS } from './validate';
-import { overallBoard, runBoard, cumulativeByDay, tagFor, MIN_OVERALL_DRAWS, MIN_RUN_DRAWS, TOP_N, type IdPolesRow, type RunRow, type DayRow } from './results';
+import { overallBoard, runBoard, cumulativeByDay, tagFor, groupOf, MIN_OVERALL_DRAWS, MIN_RUN_DRAWS, TOP_N, type IdPolesRow, type RunRow, type DayRow } from './results';
+import * as SQL from './sql';
 
 // Minimal binding types (kept local so the only dev dependencies are wrangler and vitest).
 interface D1Result<T> { results: T[] }
-interface D1Prepared { bind(...v: unknown[]): D1Prepared; run(): Promise<unknown>; all<T>(): Promise<D1Result<T>> }
-interface D1Database { prepare(sql: string): D1Prepared }
+interface D1Prepared { bind(...v: unknown[]): D1Prepared; run(): Promise<unknown>; all<T>(): Promise<D1Result<T>>; first<T>(): Promise<T | null> }
+interface D1Database { prepare(sql: string): D1Prepared; batch(s: D1Prepared[]): Promise<unknown[]> }
 interface Ctx { waitUntil(p: Promise<unknown>): void }
-declare const caches: { default: { match(k: Request): Promise<Response | undefined>; put(k: Request, r: Response): Promise<void>; delete(k: Request): Promise<boolean> } };
 
 export interface Env {
   DB: D1Database;
@@ -19,7 +22,8 @@ export interface Env {
 }
 
 const MAX_BODY = 1_000_000;
-const TOTALS_TTL = 60;
+const MEMO_MS = 5 * 60 * 1000;        // each Worker copy re-reads the snapshot row at most every 5 minutes
+const CLIENT_MAX_AGE = 600;           // browsers may reuse a response for 10 minutes
 const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 const SITE_HOSTNAME = 'dgrapov.github.io';
 
@@ -86,18 +90,18 @@ async function postSession(req: Request, env: Env, ctx: Ctx, origin: string | nu
   const st = sessionStats(s.poles, s.per_second_counts, s.focus_marks);
   const id = crypto.randomUUID();
   const flags = v.flags;
-  await env.DB.prepare(
-    `INSERT INTO sessions (id, received_at, participant_id, label, poles, seconds, block_size, app_version,
-       per_second_counts, focus_marks, goal_n, goal_hits, goal_z, goal_p, base_chi2, base_p, flags)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)`
-  ).bind(
-    id, new Date().toISOString(), s.participant_id, s.label, s.poles, s.per_second_counts.length, s.block_size, s.app_version,
-    JSON.stringify(s.per_second_counts), JSON.stringify(s.focus_marks),
-    st.goal_n, st.goal_hits, st.goal_z, st.goal_p, st.base_chi2, st.base_p, JSON.stringify(flags)
-  ).run();
-
-  memo = null; resultsMemo = null;                                 // next /api/totals and /api/results recompute
-  ctx.waitUntil(caches.default.delete(totalsKey(req)).catch(() => false));
+  const now = new Date().toISOString();
+  const db = env.DB;
+  const stmts = [
+    db.prepare(SQL.INSERT_SESSION).bind(
+      id, now, s.participant_id, s.label, s.poles, s.per_second_counts.length, s.block_size, s.app_version,
+      JSON.stringify(s.per_second_counts), JSON.stringify(s.focus_marks),
+      st.goal_n, st.goal_hits, st.goal_z, st.goal_p, st.base_chi2, st.base_p, JSON.stringify(flags)),
+    db.prepare(SQL.UPSERT_ID_POLES).bind(s.label, s.participant_id, s.poles, st.goal_n, st.goal_hits),
+    db.prepare(SQL.UPSERT_DAY).bind(s.label, now.slice(0, 10), s.poles, st.goal_n, st.goal_hits, s.per_second_counts.length),
+  ];
+  if (st.goal_n >= MIN_RUN_DRAWS && st.goal_z !== null) stmts.push(db.prepare(SQL.UPSERT_RUN).bind(groupOf(s.label), s.participant_id, st.goal_z, now));
+  await db.batch(stmts);                                           // one transaction: the session and its summaries land together
 
   return json({
     accepted: true, id,
@@ -106,103 +110,76 @@ async function postSession(req: Request, env: Env, ctx: Ctx, origin: string | nu
   }, 200, origin);
 }
 
-// ---------- totals: per-isolate memo + Cache API (the Cache API is a no-op on *.workers.dev) ----------
-let memo: { at: number; body: string } | null = null;
-const totalsKey = (req: Request) => new Request(new URL('/api/totals', req.url).toString(), { method: 'GET' });
+// ---------- hourly rebuild: summary tables -> one snapshot row per endpoint ----------
+interface Row { label: string; poles: number; sessions: number; seconds: number; n: number; hits: number }
 
-interface Row { label: string; poles: number; sessions: number; seconds: number; goal_n: number; goal_hits: number }
-
-async function computeTotals(env: Env): Promise<string> {
-  // Sum per (label, poles) in SQL; Stouffer's Z is linear in those sums (see stats.ts), so no rows leave D1.
-  const { results } = await env.DB.prepare(
-    `SELECT label, poles, COUNT(*) AS sessions, SUM(seconds) AS seconds,
-            SUM(COALESCE(goal_n, 0)) AS goal_n, SUM(COALESCE(goal_hits, 0)) AS goal_hits
-       FROM sessions GROUP BY label, poles`
-  ).all<Row>();
-  const labels = LABELS.map(label => {
-    const rows = results.filter(r => r.label === label);
-    const sum = (k: keyof Row) => rows.reduce((a, r) => a + Number(r[k] || 0), 0);
-    const zp = stoufferFromGroups(rows.map(r => ({ poles: r.poles, n: Number(r.goal_n), hits: Number(r.goal_hits) })));
-    return { label, sessions: sum('sessions'), seconds: sum('seconds'), goal_n: sum('goal_n'), goal_hits: sum('goal_hits'), z: zp.z, p: zp.p };
-  });
-  return JSON.stringify({ updated_at: new Date().toISOString(), labels });
-}
-
-async function getTotals(req: Request, env: Env, ctx: Ctx, origin: string | null): Promise<Response> {
-  const headers = { 'content-type': 'application/json; charset=utf-8', 'Cache-Control': `public, max-age=${TOTALS_TTL}`, ...cors(origin) };
-  const now = Date.now();
-  if (memo && now - memo.at < TOTALS_TTL * 1000) return new Response(memo.body, { headers });
-
-  const key = totalsKey(req);
-  const hit = await caches.default.match(key).catch(() => undefined);
-  if (hit) {
-    const body = await hit.text();
-    memo = { at: now, body };
-    return new Response(body, { headers });
-  }
-  const body = await computeTotals(env);
-  memo = { at: now, body };
-  ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'Cache-Control': `public, max-age=${TOTALS_TTL}` } })).catch(() => {}));
-  return new Response(body, { headers });
-}
-
-// ---------- results page: leaderboards, cumulative z, funnel (same caching pattern as totals) ----------
-let resultsMemo: { at: number; body: string } | null = null;
-
-async function computeResults(env: Env): Promise<string> {
+/** Build both snapshots from the summary tables (rows grow with ids and days, not sessions). */
+export async function rebuild(env: Env): Promise<{ totals: string; results: string }> {
   const db = env.DB;
   const [idRows, runRows, dayRows] = await Promise.all([
-    db.prepare(
-      `SELECT label, participant_id AS pid, poles, COUNT(*) AS sessions,
-              SUM(COALESCE(goal_n, 0)) AS n, SUM(COALESCE(goal_hits, 0)) AS hits
-         FROM sessions GROUP BY label, participant_id, poles`
-    ).all<IdPolesRow>(),
-    // SQLite returns received_at from the row holding MAX(goal_z), so best_at is the date of the best run.
-    db.prepare(
-      `SELECT CASE WHEN label = 'Control' THEN 'control' ELSE 'participants' END AS grp,
-              participant_id AS pid, COUNT(*) AS runs, MAX(goal_z) AS best_z, received_at AS best_at
-         FROM sessions WHERE goal_n >= ?1 AND goal_z IS NOT NULL
-        GROUP BY grp, participant_id`
-    ).bind(MIN_RUN_DRAWS).all<RunRow>(),
-    db.prepare(
-      `SELECT label, substr(received_at, 1, 10) AS day, poles, COUNT(*) AS sessions,
-              SUM(COALESCE(goal_n, 0)) AS n, SUM(COALESCE(goal_hits, 0)) AS hits
-         FROM sessions GROUP BY label, day, poles`
-    ).all<DayRow>(),
+    db.prepare(SQL.READ_ID_POLES).all<IdPolesRow>(),
+    db.prepare(SQL.READ_RUNS).all<RunRow>(),
+    db.prepare(SQL.READ_DAYS).all<DayRow>(),
   ]);
+  const built = new Date().toISOString();
+
+  // Totals per label, from the per-day rows summed over days.
+  const labels = LABELS.map(label => {
+    const rows = dayRows.results.filter(r => r.label === label);
+    const byPoles = new Map<number, Row>();
+    for (const r of rows) {
+      const g = byPoles.get(r.poles) || { label, poles: r.poles, sessions: 0, seconds: 0, n: 0, hits: 0 };
+      g.sessions += Number(r.sessions); g.seconds += Number(r.seconds); g.n += Number(r.n); g.hits += Number(r.hits); byPoles.set(r.poles, g);
+    }
+    const gs = [...byPoles.values()];
+    const zp = stoufferFromGroups(gs.map(g => ({ poles: g.poles, n: g.n, hits: g.hits })));
+    const sum = (k: 'sessions' | 'seconds' | 'n' | 'hits') => gs.reduce((a, g) => a + g[k], 0);
+    return { label, sessions: sum('sessions'), seconds: sum('seconds'), goal_n: sum('n'), goal_hits: sum('hits'), z: zp.z, p: zp.p };
+  });
+  const totals = JSON.stringify({ updated_at: built, labels });
+
   const id = (pid: string) => pid;
   const op = overallBoard(idRows.results, 'participants', id), oc = overallBoard(idRows.results, 'control', id);
   const rp = runBoard(runRows.results, 'participants', id), rc = runBoard(runRows.results, 'control', id);
-  // Replace ids with public tags (hash of the id) only for the rows that are shown.
-  for (const b of [op.board, oc.board, rp, rc]) for (const e of b.top) e.tag = await tagFor(e.tag);
-  return JSON.stringify({
-    updated_at: new Date().toISOString(),
-    rules: { top_n: TOP_N, min_overall_focus_minutes: MIN_OVERALL_DRAWS / 500 / 60, min_run_focus_seconds: MIN_RUN_DRAWS / 500 },
+  for (const b of [op.board, oc.board, rp, rc]) for (const e of b.top) e.tag = await tagFor(e.tag);   // public tags only for shown rows
+  const results = JSON.stringify({
+    updated_at: built,
+    rules: { top_n: TOP_N, min_overall_focus_minutes: MIN_OVERALL_DRAWS / 500 / 60, min_run_focus_seconds: MIN_RUN_DRAWS / 500, rebuilt: 'hourly' },
     overall: { participants: op.board, control: oc.board },
     single_run: { participants: rp, control: rc },
     cumulative: cumulativeByDay(dayRows.results, LABELS),
     funnel: { participants: op.funnel, control: oc.funnel },
   });
+
+  await db.batch([
+    db.prepare(SQL.WRITE_SNAPSHOT).bind('totals', totals, built),
+    db.prepare(SQL.WRITE_SNAPSHOT).bind('results', results, built),
+  ]);
+  memo.clear();
+  return { totals, results };
 }
 
-async function getResults(req: Request, env: Env, ctx: Ctx, origin: string | null): Promise<Response> {
-  const headers = { 'content-type': 'application/json; charset=utf-8', 'Cache-Control': `public, max-age=${TOTALS_TTL}`, ...cors(origin) };
+// Per-Worker-copy memo of the snapshot rows (the Cache API does nothing on *.workers.dev).
+const memo = new Map<string, { at: number; body: string }>();
+
+async function getSnapshot(key: 'totals' | 'results', env: Env, origin: string | null): Promise<Response> {
+  const headers = { 'content-type': 'application/json; charset=utf-8', 'Cache-Control': `public, max-age=${CLIENT_MAX_AGE}`, ...cors(origin) };
   const now = Date.now();
-  if (resultsMemo && now - resultsMemo.at < TOTALS_TTL * 1000) return new Response(resultsMemo.body, { headers });
-  const key = new Request(new URL('/api/results', req.url).toString(), { method: 'GET' });
-  const hit = await caches.default.match(key).catch(() => undefined);
-  if (hit) {
-    const body = await hit.text();
-    resultsMemo = { at: now, body };
-    return new Response(body, { headers });
-  }
-  const body = await computeResults(env);
-  resultsMemo = { at: now, body };
-  ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'Cache-Control': `public, max-age=${TOTALS_TTL}` } })).catch(() => {}));
+  const m = memo.get(key);
+  if (m && now - m.at < MEMO_MS) return new Response(m.body, { headers });
+  const row = await env.DB.prepare(SQL.READ_SNAPSHOT).bind(key).first<{ body: string }>();
+  // No snapshot yet (first deploy, before the first cron run): build once now.
+  const body = row ? row.body : (await rebuild(env))[key];
+  memo.set(key, { at: now, body });
   return new Response(body, { headers });
 }
 
 export default {
+  // Cron (wrangler.jsonc "triggers"): rebuild the snapshots once an hour.
+  async scheduled(_event: unknown, env: Env, ctx: Ctx): Promise<void> {
+    ctx.waitUntil(rebuild(env).then(() => undefined));
+  },
+
   async fetch(req: Request, env: Env, ctx: Ctx): Promise<Response> {
     const url = new URL(req.url);
     const origin = req.headers.get('Origin');
@@ -218,12 +195,12 @@ export default {
       if (url.pathname === '/api/totals') {
         if (req.method !== 'GET') return fail('method_not_allowed', 405, origin);
         if (origin && !originAllowed(origin)) return fail('bad_origin', 403, origin);
-        return await getTotals(req, env, ctx, origin);
+        return await getSnapshot('totals', env, origin);
       }
       if (url.pathname === '/api/results') {
         if (req.method !== 'GET') return fail('method_not_allowed', 405, origin);
         if (origin && !originAllowed(origin)) return fail('bad_origin', 403, origin);
-        return await getResults(req, env, ctx, origin);
+        return await getSnapshot('results', env, origin);
       }
       return fail('not_found', 404, origin);
     } catch (e) {

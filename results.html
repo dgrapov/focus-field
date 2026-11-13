@@ -138,7 +138,7 @@ footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);paddin
     </ul>
   </section>
 
-  <footer>Data comes from sessions shared with <b>Share my sessions</b> in the tool; see <a href="about.html#data">Data and privacy</a>. Updated every minute. <a href="https://github.com/dgrapov/focus-field">Source</a></footer>
+  <footer>Data comes from sessions shared with <b>Share my sessions</b> in the tool; see <a href="about.html#data">Data and privacy</a>. Rebuilt every hour. <a href="https://github.com/dgrapov/focus-field">Source</a></footer>
 </main>
 
 <script>
@@ -172,7 +172,7 @@ async function load(){
     data = await r.json();
     const t = new Date(data.updated_at);
     $('status').className = 'status ok';
-    $('statusText').textContent = 'Updated ' + t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' · refreshes every minute';
+    $('statusText').textContent = 'Updated ' + t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' · rebuilt every hour';
   } catch (e) {
     $('status').className = 'status err';
     $('statusText').textContent = data ? 'Can’t reach the results server; showing the last data loaded' : 'Can’t reach the results server right now. Try again in a minute.';
@@ -312,7 +312,7 @@ document.querySelectorAll('.tabs button').forEach(btn => btn.addEventListener('c
 }));
 
 findMyTag().then(t => { myTag = t; load(); });
-setInterval(load, 60000);
+setInterval(load, 10 * 60000);   // the server rebuilds results hourly
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (data) { drawLabels(); drawCumul(); drawFunnel(); } }, 150); });
 </script>
 </body>

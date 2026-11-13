@@ -3,8 +3,9 @@
 //   terminal 2: npx wrangler dev --port 8788 --var TURNSTILE_SECRET:2x0000000000000000000000000000000AA
 //               (always-fail test secret, for the bad-token case; optional, skipped if not running)
 //   terminal 3: npm run test:local
-// Test rows use label Control and participant_id test-…; delete them afterwards with
+// Test rows use label Control and participant_id test-…; delete them afterwards, then rebuild the summaries:
 //   npx wrangler d1 execute focus-field-db --local --command "DELETE FROM sessions WHERE participant_id LIKE 'test-%'"
+//   npx wrangler d1 execute focus-field-db --local --file=./migrate-summary.sql
 
 const BASE = process.env.API || 'http://localhost:8787';
 const FAIL_BASE = process.env.API_FAIL || 'http://localhost:8788';
@@ -47,13 +48,20 @@ ok(r.headers.get('access-control-allow-origin') === ORIGIN, 'POST echoes an allo
 r = await post(session({ per_second_counts: Array(30).fill([300, 300]) })); j = await r.json();
 ok(r.status === 200 && j.flags && j.flags[0] === 'rate_outside_450_550:30', 'odd rates are flagged, not rejected', JSON.stringify(j));
 
-// totals after (cache is cleared by the POST in this isolate)
+// totals are rebuilt hourly by cron; trigger that rebuild now (needs `wrangler dev --test-scheduled`, which dev:test passes)
+r = await totals(); const tBefore = await r.json();
+ok(tBefore.updated_at === t0.updated_at, 'totals do not change on save (served from the hourly snapshot)');
+r = await fetch(BASE + '/__scheduled?cron=7+*+*+*+*');
+ok(r.status === 200, 'scheduled rebuild runs');
+await new Promise(res => setTimeout(res, 500));
 r = await totals(); const t1 = await r.json();
 ok(control(t1).sessions === control(t0).sessions + 2, 'totals counts the new sessions', `${control(t0).sessions} -> ${control(t1).sessions}`);
 ok(control(t1).goal_n === control(t0).goal_n + 10000 + 12000, 'totals adds goal draws (20 s × 500 + 20 s × 600)');
 ok(typeof control(t1).z === 'number' && typeof control(t1).p === 'number', 'totals has a combined z and p');
 r = await totals(); const t2 = await r.json();
-ok(t2.updated_at === t1.updated_at, 'a second read within 60 s is cached');
+ok(t2.updated_at === t1.updated_at, 'a second read is served from the same snapshot');
+r = await fetch(BASE + '/api/results', { headers: { Origin: ORIGIN } }); j = await r.json();
+ok(r.status === 200 && j.overall && j.single_run && j.cumulative, 'GET /api/results returns boards and the running total');
 
 // bad origin
 r = await post(session(), 'https://evil.example'); j = await r.json();

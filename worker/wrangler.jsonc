@@ -4,6 +4,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-20",
   "observability": { "enabled": true },
+  // Rebuild /api/totals and /api/results from the summary tables once an hour (minute 7). Free plan allows cron triggers.
+  "triggers": { "crons": ["7 * * * *"] },
   "d1_databases": [
     {
       "binding": "DB",

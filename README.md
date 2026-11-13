@@ -80,7 +80,7 @@ Every session is analysed in your browser either way. What changes is whether it
 - **Local:** switch **Share my sessions** off and nothing is sent anywhere. Your sessions stay in your browser's storage.
 - **Shared (the default):** each finished session goes to the Focus Field API once. A shared session carries the per-second counts, your focus marks, the label you chose (Human, Both or Control), the app version and a random id made by your browser. It carries no name, email or account.
 - **The server recomputes your result.** It checks that the session is plausible and recomputes z and p from the raw counts. Your browser only sends counts, never its own statistics.
-- **Combined results:** the **Everyone** plot shows the combined z for each label against the ±1.96 chance lines, refreshed every minute.
+- **Combined results:** the **Everyone** plot shows the combined z for each label against the ±1.96 chance lines, rebuilt every hour.
 - **[Results & leaderboard](https://dgrapov.github.io/focus-field/results.html):** a page with the pooled analysis. It shows:
   - the combined z for each label;
   - the running z over time;
