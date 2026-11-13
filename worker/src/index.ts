@@ -1,8 +1,9 @@
-// Focus Field shared-data API: POST /api/session, GET /api/totals.
+// Focus Field shared-data API: POST /api/session, GET /api/totals, GET /api/results.
 // One D1 table (schema.sql). Gatekeeping: Origin allowlist + Cloudflare Turnstile on every POST.
 
 import { sessionStats, stoufferFromGroups } from './stats';
 import { validateSession, originAllowed, TEST_SECRETS, LABELS } from './validate';
+import { overallBoard, runBoard, cumulativeByDay, tagFor, MIN_OVERALL_DRAWS, MIN_RUN_DRAWS, TOP_N, type IdPolesRow, type RunRow, type DayRow } from './results';
 
 // Minimal binding types (kept local so the only dev dependencies are wrangler and vitest).
 interface D1Result<T> { results: T[] }
@@ -95,7 +96,7 @@ async function postSession(req: Request, env: Env, ctx: Ctx, origin: string | nu
     st.goal_n, st.goal_hits, st.goal_z, st.goal_p, st.base_chi2, st.base_p, JSON.stringify(flags)
   ).run();
 
-  memo = null;                                                     // next /api/totals recomputes
+  memo = null; resultsMemo = null;                                 // next /api/totals and /api/results recompute
   ctx.waitUntil(caches.default.delete(totalsKey(req)).catch(() => false));
 
   return json({
@@ -145,6 +146,62 @@ async function getTotals(req: Request, env: Env, ctx: Ctx, origin: string | null
   return new Response(body, { headers });
 }
 
+// ---------- results page: leaderboards, cumulative z, funnel (same caching pattern as totals) ----------
+let resultsMemo: { at: number; body: string } | null = null;
+
+async function computeResults(env: Env): Promise<string> {
+  const db = env.DB;
+  const [idRows, runRows, dayRows] = await Promise.all([
+    db.prepare(
+      `SELECT label, participant_id AS pid, poles, COUNT(*) AS sessions,
+              SUM(COALESCE(goal_n, 0)) AS n, SUM(COALESCE(goal_hits, 0)) AS hits
+         FROM sessions GROUP BY label, participant_id, poles`
+    ).all<IdPolesRow>(),
+    // SQLite returns received_at from the row holding MAX(goal_z), so best_at is the date of the best run.
+    db.prepare(
+      `SELECT CASE WHEN label = 'Control' THEN 'control' ELSE 'participants' END AS grp,
+              participant_id AS pid, COUNT(*) AS runs, MAX(goal_z) AS best_z, received_at AS best_at
+         FROM sessions WHERE goal_n >= ?1 AND goal_z IS NOT NULL
+        GROUP BY grp, participant_id`
+    ).bind(MIN_RUN_DRAWS).all<RunRow>(),
+    db.prepare(
+      `SELECT label, substr(received_at, 1, 10) AS day, poles, COUNT(*) AS sessions,
+              SUM(COALESCE(goal_n, 0)) AS n, SUM(COALESCE(goal_hits, 0)) AS hits
+         FROM sessions GROUP BY label, day, poles`
+    ).all<DayRow>(),
+  ]);
+  const id = (pid: string) => pid;
+  const op = overallBoard(idRows.results, 'participants', id), oc = overallBoard(idRows.results, 'control', id);
+  const rp = runBoard(runRows.results, 'participants', id), rc = runBoard(runRows.results, 'control', id);
+  // Replace ids with public tags (hash of the id) only for the rows that are shown.
+  for (const b of [op.board, oc.board, rp, rc]) for (const e of b.top) e.tag = await tagFor(e.tag);
+  return JSON.stringify({
+    updated_at: new Date().toISOString(),
+    rules: { top_n: TOP_N, min_overall_focus_minutes: MIN_OVERALL_DRAWS / 500 / 60, min_run_focus_seconds: MIN_RUN_DRAWS / 500 },
+    overall: { participants: op.board, control: oc.board },
+    single_run: { participants: rp, control: rc },
+    cumulative: cumulativeByDay(dayRows.results, LABELS),
+    funnel: { participants: op.funnel, control: oc.funnel },
+  });
+}
+
+async function getResults(req: Request, env: Env, ctx: Ctx, origin: string | null): Promise<Response> {
+  const headers = { 'content-type': 'application/json; charset=utf-8', 'Cache-Control': `public, max-age=${TOTALS_TTL}`, ...cors(origin) };
+  const now = Date.now();
+  if (resultsMemo && now - resultsMemo.at < TOTALS_TTL * 1000) return new Response(resultsMemo.body, { headers });
+  const key = new Request(new URL('/api/results', req.url).toString(), { method: 'GET' });
+  const hit = await caches.default.match(key).catch(() => undefined);
+  if (hit) {
+    const body = await hit.text();
+    resultsMemo = { at: now, body };
+    return new Response(body, { headers });
+  }
+  const body = await computeResults(env);
+  resultsMemo = { at: now, body };
+  ctx.waitUntil(caches.default.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'Cache-Control': `public, max-age=${TOTALS_TTL}` } })).catch(() => {}));
+  return new Response(body, { headers });
+}
+
 export default {
   async fetch(req: Request, env: Env, ctx: Ctx): Promise<Response> {
     const url = new URL(req.url);
@@ -162,6 +219,11 @@ export default {
         if (req.method !== 'GET') return fail('method_not_allowed', 405, origin);
         if (origin && !originAllowed(origin)) return fail('bad_origin', 403, origin);
         return await getTotals(req, env, ctx, origin);
+      }
+      if (url.pathname === '/api/results') {
+        if (req.method !== 'GET') return fail('method_not_allowed', 405, origin);
+        if (origin && !originAllowed(origin)) return fail('bad_origin', 403, origin);
+        return await getResults(req, env, ctx, origin);
       }
       return fail('not_found', 404, origin);
     } catch (e) {

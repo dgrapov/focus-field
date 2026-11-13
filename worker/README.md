@@ -9,6 +9,7 @@ Live URL once deployed: `https://focus-field-api.dgrapov.workers.dev`.
 |---|---|---|
 | `POST` | `/api/session` | One finished session. Body (max 1 MB): `{turnstile_token, participant_id, label, poles, block_size, app_version, per_second_counts, focus_marks}`. Returns `{accepted, id, goal_n, goal_hits, goal_z, goal_p, base_chi2, base_p, flags}`. |
 | `GET` | `/api/totals` | Per label (`Human`, `Both`, `Control`): sessions, seconds, goal draws, goal hits, Stouffer z (weighted by draws) and one-sided p. Cached 60 s. |
+| `GET` | `/api/results` | For `results.html`: top-10 boards (best overall by Stouffer z, ids with ≥ 30 min focus; best single run, corrected for the number of runs, runs ≥ 60 s) for participants (Human + Both) and Control, each with a luck line; cumulative z per label by day; funnel points (draws, z) per id. Ids are shown only as `sha256(id)[0:6]`. Cached 60 s. |
 
 Gatekeeping: the `Origin` must be `https://dgrapov.github.io` or `http://localhost:<port>`, and every POST
 carries a Cloudflare Turnstile token that the Worker verifies with `TURNSTILE_SECRET`; siteverify must report the hostname `dgrapov.github.io` (skipped only for test secrets, which are themselves refused for any `https://` origin). Errors are short codes
@@ -22,6 +23,7 @@ stats. No IP addresses, user agents or names.
 
 - `src/index.ts` router, CORS, Turnstile check, handlers
 - `src/stats.ts` normal CDF, chi-square survival, session scoring, Stouffer (pure)
+- `src/results.ts` leaderboards, luck line, cumulative z and funnel for `/api/results` (pure)
 - `src/validate.ts` input checks and the origin allowlist (pure)
 - `schema.sql` the `sessions` table
 - `test/*.test.ts` unit tests (vitest); `test/local-api.mjs` scripted checks against `wrangler dev`

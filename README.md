@@ -6,6 +6,8 @@
   <a href="https://dgrapov.github.io/focus-field/"><b>Open the tool</b></a>
   &nbsp;·&nbsp;
   <a href="https://dgrapov.github.io/focus-field/about.html"><b>The idea &amp; how to test it</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://dgrapov.github.io/focus-field/results.html"><b>Results &amp; leaderboard</b></a>
 </p>
 
 <p align="center">
@@ -79,11 +81,18 @@ Every session is analysed in your browser either way. What changes is whether it
 - **Shared:** with it on, each finished session goes to the Focus Field API once. A shared session carries the per-second counts, your focus marks, the label you chose (Human, Both or Control), the app version and a random id made by your browser. It carries no name, email or account.
 - **The server recomputes your result.** It checks that the session is plausible and recomputes z and p from the raw counts. Your browser only sends counts, never its own statistics.
 - **Combined results:** the **Everyone** plot shows the combined z for each label against the ±1.96 chance lines, refreshed every minute.
+- **[Results & leaderboard](https://dgrapov.github.io/focus-field/results.html):** a page with the pooled analysis. It shows:
+  - the combined z for each label;
+  - the running z over time;
+  - a funnel plot of every random id;
+  - two top-10 boards, best overall and best single run, scored so that one lucky run and many steady hours compete fairly.
+
+  A Control board beside them shows what pure luck looks like.
 - **Bot check:** sharing uses Cloudflare Turnstile to keep bots out. The API stores no IP addresses or user agents.
 
 The details are in [Data and privacy](https://dgrapov.github.io/focus-field/about.html#data). The API is a small Cloudflare Worker with a D1 database, in [`worker/`](worker/).
 
-Pooling matters because a real effect at the size PEAR reported would need tens of hours of data. One person rarely records that much, but many people together can.
+Pooling matters because a real effect at the size PEAR reported would need tens of hours of data. One person rarely records that much, but many people together can. **Turn on sharing and your sessions count.**
 
 ## How the randomness works
 
@@ -106,12 +115,6 @@ Opening `index.html` directly in a browser also works.
 
 ## Roadmap
 
-- **Results page:** a public analysis of the shared data. It will show:
-  - the combined z for each label, plus a cumulative-z curve over time;
-  - a funnel plot of every random id against its amount of data;
-  - a leaderboard of the most influential ids.
-
-  The leaderboard ranks by combined z, counts only ids with enough data, and is drawn inside the band that pure chance produces, so luck looks like luck.
 - **AI participants through an MCP server.** The server draws the random numbers only after an agent has placed its attention on the outcome and logged how it did so. Each attention method is then scored against its own rest blocks.
 
 - Hardware random source through Web Serial (TrueRNG, OneRNG), with each session recording which source it used

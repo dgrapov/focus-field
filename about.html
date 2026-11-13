@@ -70,7 +70,7 @@ footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);paddin
 <main>
   <div class="top">
     <a class="brand" href="./">Focus Field <b>1</b>·<i>0</i></a>
-    <a href="./">Open the tool →</a>
+    <span style="display:flex;gap:16px;flex-wrap:wrap"><a href="results.html">Results &amp; leaderboard</a><a href="./">Open the tool →</a></span>
   </div>
 
   <header>
@@ -137,7 +137,7 @@ footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);paddin
   <section id="data">
     <h2>Data and privacy</h2>
     <p>Sharing is off unless you turn it on. With <b>Share my sessions</b> switched on in the Focus panel, each session you finish with <b>Finish &amp; analyse</b> is sent to a small Focus Field server (a Cloudflare Worker with a database) so everyone's sessions can be added up. It shares counts, focus marks and a random id. No personal data.</p>
-    <p>Exactly what is sent: the draws each pole got in every second, which pole you were focusing on in each second (or none), the number of poles, the label you picked (Human, Both or Control), the block size, the app version, and a random id that this browser makes once and keeps in its local storage. The Focus Field database stores no names, emails, accounts, IP addresses or browser details. Cloudflare, which runs the server, may briefly keep request details (such as IP addresses) in its Worker logs. The server recomputes the statistics itself, and the <b>Everyone</b> plot shows the combined result for each label.</p>
+    <p>Exactly what is sent: the draws each pole got in every second, which pole you were focusing on in each second (or none), the number of poles, the label you picked (Human, Both or Control), the block size, the app version, and a random id that this browser makes once and keeps in its local storage. The Focus Field database stores no names, emails, accounts, IP addresses or browser details. Cloudflare, which runs the server, may briefly keep request details (such as IP addresses) in its Worker logs. The server recomputes the statistics itself, and the <b>Everyone</b> plot shows the combined result for each label. The <a href="results.html">Results &amp; leaderboard</a> page shows the pooled analysis; ids there appear only as a 6-character tag made by hashing the random id.</p>
     <p>To keep out automated junk, each save is checked with <a href="https://www.cloudflare.com/products/turnstile/">Cloudflare Turnstile</a>, which loads only while sharing is on and usually runs without asking you anything. Turnstile is run by Cloudflare under its <a href="https://www.cloudflare.com/turnstile-privacy-policy/">Turnstile privacy terms</a>. If a save fails, the session stays in this browser and is sent the next time you open the page with sharing on. Turn the switch off at any time to stop sending; your local history is unaffected.</p>
   </section>
 

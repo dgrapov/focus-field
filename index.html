@@ -173,7 +173,7 @@ table.h td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowra
       <header>
         <div>
           <h1>Focus Field <b>1</b>·<i>0</i></h1>
-            <nav class="nav"><a href="about.html">The idea &amp; how to test it</a><span aria-hidden="true">·</span><a href="https://github.com/dgrapov/focus-field">Source</a></nav>
+            <nav class="nav"><a href="about.html">The idea &amp; how to test it</a><span aria-hidden="true">·</span><a href="results.html">Results &amp; leaderboard</a><span aria-hidden="true">·</span><a href="https://github.com/dgrapov/focus-field">Source</a></nav>
         </div>
       </header>
 
@@ -193,7 +193,7 @@ table.h td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowra
           <div class="row share" id="shareRow" hidden>
             <label class="sw"><input type="checkbox" id="shareOn"><span>Share my sessions</span></label>
             <label class="sw" for="shareLabel" style="cursor:default"><span class="lab" style="margin:0">Label</span><select id="shareLabel"><option value="Human">Human</option><option value="Both">Both</option><option value="Control">Control</option></select></label>
-            <p class="note">Shares counts, focus marks and a random id. No personal data. <a href="about.html#data">What is shared</a></p>
+            <p class="note"><b style="color:var(--fg)">Join the global experiment:</b> each session you finish adds to everyone's pooled result and the leaderboard. Shares counts, focus marks and a random id. No personal data. <a href="about.html#data">What is shared</a> · <a href="results.html">Results &amp; leaderboard</a></p>
             <div id="tsBox"></div>
           </div>
           <div class="msg" id="fMsg" role="status"></div>
@@ -342,7 +342,7 @@ table.h td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowra
         <div class="legend" id="tchartLeg"></div>
       </section>
       <section class="plot" id="p-all" style="--g:.8" aria-label="Everyone">
-        <div class="ph" draggable="true" title="Drag onto another plot to swap"><span class="pt">Everyone</span><span class="ps" id="allLab">shared sessions · combined z per label</span><button class="pbtn" data-act="load" title="Load everyone's totals now">↻</button><button class="pbtn" data-act="mv" title="Move earlier">◀</button><button class="pbtn" data-act="min" title="Minimize to the dock">–</button><button class="pbtn" data-act="exp" title="Expand">⤢</button></div>
+        <div class="ph" draggable="true" title="Drag onto another plot to swap"><span class="pt">Everyone</span><span class="ps" id="allLab">shared sessions · combined z per label</span><a class="pbtn" href="results.html" title="Full results and leaderboard" style="text-decoration:none;display:inline-grid;place-items:center">↗</a><button class="pbtn" data-act="load" title="Load everyone's totals now">↻</button><button class="pbtn" data-act="mv" title="Move earlier">◀</button><button class="pbtn" data-act="min" title="Minimize to the dock">–</button><button class="pbtn" data-act="exp" title="Expand">⤢</button></div>
         <div class="pb"><canvas id="everyone" aria-label="Combined z-score per label across everyone's shared sessions"></canvas></div>
         <div class="legend" id="allLeg"></div>
       </section>
@@ -374,7 +374,7 @@ table.h td{padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowra
     <p><b>The field.</b> At 2 poles the circle fills toward cyan (1) or coral (0) by the z-score of the last few seconds; a quarter of the way up is about z = 1. At 3 or more poles each spoke of the radar shows how far that pole is above or below chance (the solid ring is chance, the dashed rings are ±2), and the glowing orb is pulled toward whichever poles the stream favours.</p>
     <p><b>Jitter</b> is the same lean measured over a short window and drawn continuously, so you can see the wobble between seconds. <b>Changes of leader</b>: pure chance changes the leading pole most seconds (about 30 a minute at 2 poles, about 50 at 6).</p>
     <p><b>Finish &amp; analyse</b> scores every focus second toward the goal it had at that moment (so switching goals is fine), checks the no-focus seconds against chance, compares streaks and leader changes with what chance predicts, and saves the result to the history. The seed is a SHA-256 hash of the session's raw draws, your focus marks and its start time. The short seed (its first 8 hex digits as a number) can seed other randomness later, such as visualizer stacks or a Strudel pattern.</p>
-    <p><b>The research so far.</b> The Princeton PEAR lab reported a deviation of roughly 1 in 10,000 over many years. A three-lab replication in 2000 did not reproduce it, and a 2006 meta-analysis found a tiny overall effect that publication bias could explain. At that size it would take tens of millions of draws (tens of hours) to show, so single sessions will look like noise either way. Sessions and history are kept in this browser; nothing is sent unless you turn on <b>Share my sessions</b>. <a href="about.html" style="color:var(--gold)">More on the idea, the evidence and a protocol to try</a>.</p>
+    <p><b>The research so far.</b> The Princeton PEAR lab reported a deviation of roughly 1 in 10,000 over many years. A three-lab replication in 2000 did not reproduce it, and a 2006 meta-analysis found a tiny overall effect that publication bias could explain. At that size it would take tens of millions of draws (tens of hours) to show, so single sessions will look like noise either way. Sessions and history are kept in this browser; nothing is sent unless you turn on <b>Share my sessions</b>. Because one person rarely records tens of hours, sharing is how this gets tested: every shared session joins the global experiment on the <a href="results.html" style="color:var(--gold)">Results &amp; leaderboard</a> page. <a href="about.html" style="color:var(--gold)">More on the idea, the evidence and a protocol to try</a>.</p>
   </details>
 </div>
 

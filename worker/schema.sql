@@ -14,3 +14,4 @@ CREATE TABLE IF NOT EXISTS sessions (
   flags TEXT                           -- JSON list of warnings
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_label ON sessions(label);
+CREATE INDEX IF NOT EXISTS idx_sessions_pid ON sessions(participant_id);

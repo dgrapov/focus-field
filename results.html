@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Focus Field · Results</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="assets/icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#07080F">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Focus Field · Results">
+<meta property="og:description" content="Everyone's shared Focus Field sessions, pooled: combined z per label, the running total over time, a funnel of every participant, and two fair leaderboards.">
+<meta property="og:url" content="https://dgrapov.github.io/focus-field/results.html">
+<meta property="og:image" content="https://dgrapov.github.io/focus-field/assets/social-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="description" content="Pooled results of the Focus Field experiment: can attention lean on chance? Combined z per label, cumulative z over time, a funnel plot and fair leaderboards.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Same dark instrument world as the tool and About page; a wider column so charts and tables have room. */
+:root{
+  --bg:#07080F; --panel:#0F1220; --line:#232842; --grid:#1A1F36; --fg:#E6E9F5; --muted:#8A90AE;
+  --one:#19E6FF; --zero:#FF5A2E; --gold:#FFC23A; --lime:#B6FF3B; --band:#3A4170;
+  --c-human:#19E6FF; --c-both:#FFC23A; --c-control:#8A90AE;
+  --display:"Unbounded",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  color-scheme:dark; box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{background:var(--bg);color:var(--fg)}
+body{margin:0;font:16px/1.6 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 64px}
+main{max-width:960px;margin:0 auto;display:grid;gap:36px}
+a{color:var(--gold)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px}
+.top a{text-decoration:none} .top nav{display:flex;gap:16px;flex-wrap:wrap}
+.brand{font:700 15px var(--display);color:var(--fg);text-decoration:none}
+.brand b{color:var(--one)} .brand i{color:var(--zero);font-style:normal}
+.eyebrow{font:600 12px var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+h1{font:700 clamp(26px,5.5vw,42px)/1.14 var(--display);letter-spacing:.01em;margin:0;text-wrap:balance}
+h1 b{color:var(--one);font-weight:700}
+.lede{font-size:18px;margin:14px 0 0;max-width:64ch}
+h2{font:700 18px/1.3 var(--display);letter-spacing:.02em;margin:0 0 6px;text-wrap:balance}
+.sub{color:var(--muted);font-size:14.5px;margin:0 0 14px;max-width:70ch}
+section p{max-width:68ch}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 18px 14px;min-width:0}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+@media (max-width:760px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.status{font:500 13px var(--mono);color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.status .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.status.ok .dot{background:var(--lime)} .status.err .dot{background:var(--zero)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+svg{display:block;width:100%;height:auto;overflow:visible}
+svg text{font:12px var(--mono);fill:var(--muted)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:12px;height:3px;border-radius:2px;background:var(--c)}
+.legend i.pt{width:8px;height:8px;border-radius:50%}
+.empty{color:var(--muted);font-size:14.5px;padding:24px 0;text-align:center}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+.tabs button{font:600 14px var(--body);color:var(--muted);background:transparent;border:1px solid var(--line);border-radius:999px;padding:7px 14px;cursor:pointer}
+.tabs button[aria-selected=true]{color:#140E00;background:var(--gold);border-color:var(--gold)}
+.tblwrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th{font:600 12px var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,th:nth-child(2),td:first-child,td:nth-child(2){text-align:left}
+td{padding:8px;border-bottom:1px solid var(--grid);text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.rank{color:var(--muted);width:2.5em}
+td.tag{color:var(--fg)}
+td.z{color:var(--fg);font-weight:500}
+tr.me td{background:rgba(255,194,58,.10)} tr.me td.tag::after{content:" · you";color:var(--gold);font-family:var(--body)}
+tr.luck td{border-bottom:1px dashed var(--gold);color:var(--gold);font:500 12.5px var(--body);text-align:left;padding:4px 8px}
+.meta{font-size:13.5px;color:var(--muted);margin:10px 0 0}
+.rules{display:grid;gap:12px;margin:0;padding:0;list-style:none}
+.rules li{border-top:1px solid var(--line);padding-top:12px;max-width:72ch}
+.math{font:14px var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:2px 7px;white-space:nowrap}
+.me-card p{margin:0}
+footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:18px}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <a class="brand" href="./">Focus Field <b>1</b>·<i>0</i></a>
+    <nav><a href="about.html">The idea</a><a href="./">Open the tool →</a></nav>
+  </div>
+
+  <header>
+    <p class="eyebrow">Results</p>
+    <h1>Is everyone's attention leaning on <b>chance</b>?</h1>
+    <p class="lede">These are all the sessions people chose to share, pooled. Under pure chance every z below stays near 0 and inside ±1.96 about 95% of the time; a real effect would push the Human line up and keep it there.</p>
+    <p class="status" id="status"><span class="dot"></span><span id="statusText">Loading shared results…</span></p>
+  </header>
+
+  <section class="card me-card" id="meCard" hidden>
+    <p id="meText"></p>
+  </section>
+
+  <section>
+    <h2>Combined result per label</h2>
+    <p class="sub">Stouffer z over every shared session, weighted by draws. Control sessions are recorded with no one focusing, so they show what chance looks like here.</p>
+    <div class="card"><div id="labels"></div></div>
+  </section>
+
+  <section>
+    <h2>Running total over time</h2>
+    <p class="sub">The combined z after each day of data. A real effect climbs steadily as data piles up; chance wanders and comes back.</p>
+    <div class="card"><div id="cumul"></div><div class="legend" id="cumulLeg"></div></div>
+  </section>
+
+  <section>
+    <h2>Every participant</h2>
+    <p class="sub">One dot per random id: its combined z against how much focus data it has. Pure chance keeps about 95% of dots between the lines at any amount of data, so a dot far above them with many hours behind it is the interesting kind.</p>
+    <div class="card"><div id="funnel"></div><div class="legend"><span><i class="pt" style="--c:var(--c-human)"></i>Participants (Human and Both)</span><span><i class="pt" style="--c:var(--c-control)"></i>Control</span><span><i style="--c:var(--band)"></i>±1.96</span></div></div>
+  </section>
+
+  <section>
+    <h2>Leaderboards</h2>
+    <p class="sub">The top 10 by two fair measures. The dashed gold line marks the score that the luckiest of that many ids would reach by chance alone; rows above it are worth a second look, rows below it are ordinary luck.</p>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-board="overall">Best overall</button>
+      <button role="tab" aria-selected="false" data-board="single_run">Best single run</button>
+    </div>
+    <div class="grid2">
+      <div class="card"><h2>Participants</h2><p class="sub" id="bpSub"></p><div class="tblwrap" id="bp"></div><p class="meta" id="bpMeta"></p></div>
+      <div class="card"><h2>Control: the luck board</h2><p class="sub">The same ranking for sessions with no one focusing. If the Participants board looks like this one, chance explains it.</p><div class="tblwrap" id="bc"></div><p class="meta" id="bcMeta"></p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How the boards stay fair</h2>
+    <ul class="rules">
+      <li><b>Best overall</b> ranks each id by its combined z over all its sessions. z already allows for the amount of data: under chance it averages 0 with a spread of about ±1 whether an id has five minutes or fifty hours, while a real, steady effect makes it grow as hours add up. An id needs at least <span id="rMin">30</span> minutes of focus data to qualify.</li>
+      <li><b>Best single run</b> ranks each id by its best session, corrected for how many sessions it ran: <span class="math">p_adj = 1 − (1 − p_best)^runs</span>, shown back as a z. One great run out of one beats the same run picked from a hundred tries, and starting over with a fresh id does not help much. Runs count from <span id="rRun">60</span> seconds of focus.</li>
+      <li><b>Effect size</b> (extra hits per 10,000 draws) is shown but never ranked on: over a small amount of data it swings widely, so ranking by it would always favour short lucky sessions.</li>
+      <li><b>The luck line</b> is the expected best z among N independent ids under pure chance. With 10 ids it is about 1.5; with 100, about 2.5. Ids appear as a 6-character tag made by hashing the random id, so no part of the id itself is shown.</li>
+    </ul>
+  </section>
+
+  <footer>Data comes from sessions shared with <b>Share my sessions</b> in the tool; see <a href="about.html#data">Data and privacy</a>. Updated every minute. <a href="https://github.com/dgrapov/focus-field">Source</a></footer>
+</main>
+
+<script>
+const DEV = location.hostname === 'localhost';
+const API_BASE = DEV ? 'http://localhost:8787' : 'https://focus-field-api.dgrapov.workers.dev';
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const COL = { Human: css('--c-human'), Both: css('--c-both'), Control: css('--c-control') };
+const fmt = (x, d = 2) => (x === null || x === undefined || !Number.isFinite(+x)) ? '–' : (+x).toFixed(d);
+const sgn = (x, d = 2) => (x === null || x === undefined) ? '–' : (x > 0 ? '+' : '') + (+x).toFixed(d);
+const fmtP = p => p === null || p === undefined ? '–' : p < 0.0001 ? p.toExponential(1) : p.toFixed(4);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const NS = 'http://www.w3.org/2000/svg';
+
+let data = null, board = 'overall', myTag = null;
+
+// The tool keeps this browser's random id in localStorage (JSON-encoded). Its public tag is the first 6 hex of SHA-256(id).
+async function findMyTag(){
+  try {
+    const raw = localStorage.getItem('focusfield.pid'); if (!raw) return null;
+    const pid = JSON.parse(raw); if (typeof pid !== 'string') return null;
+    const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pid));
+    return [...new Uint8Array(h)].slice(0, 3).map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) { return null; }
+}
+
+async function load(){
+  try {
+    const r = await fetch(API_BASE + '/api/results');
+    if (!r.ok) throw new Error(String(r.status));
+    data = await r.json();
+    const t = new Date(data.updated_at);
+    $('status').className = 'status ok';
+    $('statusText').textContent = 'Updated ' + t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' · refreshes every minute';
+  } catch (e) {
+    $('status').className = 'status err';
+    $('statusText').textContent = data ? 'Can’t reach the results server; showing the last data loaded' : 'Can’t reach the results server right now. Try again in a minute.';
+  }
+  render();
+}
+
+function render(){
+  if (!data) { for (const id of ['labels', 'cumul', 'funnel', 'bp', 'bc']) $(id).innerHTML = '<div class="empty">No data yet.</div>'; return; }
+  $('rMin').textContent = data.rules.min_overall_focus_minutes;
+  $('rRun').textContent = data.rules.min_run_focus_seconds;
+  drawLabels(); drawCumul(); drawFunnel(); drawBoards(); drawMe();
+}
+
+// Draw in real pixels so axis text stays 12px on any screen.
+const widthOf = id => Math.max(300, Math.round($(id).clientWidth || 880));
+function el(tag, attrs = {}, parent){ const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function svgIn(id, w, h){ const host = $(id); host.innerHTML = ''; const s = el('svg', { viewBox: `0 0 ${w} ${h}`, role: 'img' }); host.appendChild(s); return s; }
+
+// Horizontal bars: final combined z per label, against ±1.96.
+function drawLabels(){
+  const rows = ['Human', 'Both', 'Control'].map(l => { const c = data.cumulative[l] || []; const last = c[c.length - 1]; return { l, z: last ? last.z : null, s: last ? last.sessions : 0, d: last ? last.draws : 0 }; });
+  if (!rows.some(r => r.s > 0)) { $('labels').innerHTML = '<div class="empty">No shared sessions yet. Turn on Share my sessions in the tool and finish a session to start the pool.</div>'; return; }
+  const W = widthOf('labels'), rowH = 46, H = rows.length * rowH + 28, x0 = W < 520 ? 110 : 170, x1 = W - 20;
+  const lim = Math.max(3, ...rows.map(r => Math.abs(r.z || 0) + 0.5));
+  const X = z => x0 + (z + lim) / (2 * lim) * (x1 - x0);
+  const s = svgIn('labels', W, H);
+  el('rect', { x: X(-1.96), y: 0, width: X(1.96) - X(-1.96), height: H - 24, fill: css('--band'), opacity: .22 }, s);
+  for (const z of [-1.96, 0, 1.96]) el('line', { x1: X(z), x2: X(z), y1: 0, y2: H - 24, stroke: z ? css('--band') : css('--line'), 'stroke-dasharray': z ? '4 4' : '' }, s);
+  for (const z of (W < 520 ? [-1.96, 0, 1.96] : [-lim, -1.96, 0, 1.96, lim])) { const t = el('text', { x: X(z), y: H - 6, 'text-anchor': 'middle' }, s); t.textContent = z === 0 ? '0' : sgn(z, Math.abs(z) === 1.96 ? 2 : 0); }
+  rows.forEach((r, i) => {
+    const y = i * rowH + 8;
+    const t = el('text', { x: 0, y: y + 17, style: `fill:${css('--fg')};font:600 14px ${css('--body')}` }, s); t.textContent = r.l;
+    const t2 = el('text', { x: 0, y: y + 33 }, s); t2.textContent = r.s ? `${r.s} sessions · ${(r.d / 500 / 3600).toFixed(1)} h` : 'no sessions';
+    if (r.z === null) return;
+    const a = X(0), b = X(r.z);
+    el('rect', { x: Math.min(a, b), y: y + 4, width: Math.max(2, Math.abs(b - a)), height: 22, rx: 4, fill: COL[r.l] }, s);
+    const v = el('text', { x: b + (r.z >= 0 ? 8 : -8), y: y + 20, 'text-anchor': r.z >= 0 ? 'start' : 'end', style: `fill:${css('--fg')}` }, s); v.textContent = 'z ' + sgn(r.z);
+  });
+}
+
+// Cumulative z per label by day, with the ±1.96 band.
+function drawCumul(){
+  const series = ['Human', 'Both', 'Control'].map(l => ({ l, pts: (data.cumulative[l] || []).filter(p => p.z !== null) })).filter(x => x.pts.length);
+  if (!series.length) { $('cumul').innerHTML = '<div class="empty">The running total starts with the first shared session.</div>'; $('cumulLeg').innerHTML = ''; return; }
+  const days = [...new Set(series.flatMap(x => x.pts.map(p => p.day)))].sort();
+  const W = widthOf('cumul'), H = W < 520 ? 240 : 300, L = 44, R = 16, T = 12, B = 30;
+  const lim = Math.max(3, ...series.flatMap(x => x.pts.map(p => Math.abs(p.z) + 0.5)));
+  const X = d => days.length === 1 ? (L + W - R) / 2 : L + days.indexOf(d) / (days.length - 1) * (W - L - R);
+  const Y = z => T + (lim - z) / (2 * lim) * (H - T - B);
+  const s = svgIn('cumul', W, H);
+  el('rect', { x: L, y: Y(1.96), width: W - L - R, height: Y(-1.96) - Y(1.96), fill: css('--band'), opacity: .22 }, s);
+  for (const z of [-2, -1, 0, 1, 2].concat(lim >= 4 ? [-3, 3] : [])) {
+    el('line', { x1: L, x2: W - R, y1: Y(z), y2: Y(z), stroke: z ? css('--grid') : css('--line') }, s);
+    const t = el('text', { x: L - 8, y: Y(z) + 4, 'text-anchor': 'end' }, s); t.textContent = z > 0 ? '+' + z : z;
+  }
+  for (const z of [-1.96, 1.96]) el('line', { x1: L, x2: W - R, y1: Y(z), y2: Y(z), stroke: css('--band'), 'stroke-dasharray': '4 4' }, s);
+  const step = Math.max(1, Math.ceil(days.length / (W < 520 ? 3 : 6)));
+  days.forEach((d, i) => { if (i % step && i !== days.length - 1) return; const t = el('text', { x: X(d), y: H - 8, 'text-anchor': 'middle' }, s); t.textContent = d.slice(5); });
+  for (const sr of series) {
+    if (sr.pts.length > 1) el('polyline', { points: sr.pts.map(p => `${X(p.day)},${Y(p.z)}`).join(' '), fill: 'none', stroke: COL[sr.l], 'stroke-width': 2.2, 'stroke-linejoin': 'round' }, s);
+    const last = sr.pts[sr.pts.length - 1];
+    el('circle', { cx: X(last.day), cy: Y(last.z), r: 4, fill: COL[sr.l] }, s);
+    for (const p of sr.pts) { const c = el('circle', { cx: X(p.day), cy: Y(p.z), r: 8, fill: 'transparent' }, s); const ti = el('title', {}, c); ti.textContent = `${sr.l} · ${p.day} · z ${sgn(p.z)} · ${p.sessions} sessions`; }
+  }
+  $('cumulLeg').innerHTML = series.map(x => `<span><i style="--c:${COL[x.l]}"></i>${x.l}</span>`).join('') + `<span><i style="--c:var(--band)"></i>±1.96 (p &lt; .05)</span>`;
+}
+
+// Funnel: z against focus hours (log scale) for every id.
+function drawFunnel(){
+  const P = (data.funnel.participants || []).map(p => ({ ...p, g: 'p' })), C = (data.funnel.control || []).map(p => ({ ...p, g: 'c' }));
+  const pts = C.concat(P);
+  if (!pts.length) { $('funnel').innerHTML = '<div class="empty">Each id appears here once it shares a session with focus time.</div>'; return; }
+  const W = widthOf('funnel'), H = W < 520 ? 260 : 320, L = 44, R = 16, T = 12, B = 34;
+  const hrs = p => p.draws / 500 / 3600;
+  const minH = Math.min(...pts.map(hrs)), maxH = Math.max(...pts.map(hrs));
+  const lo = Math.log10(Math.max(1 / 3600, minH / 1.5)), hi = Math.log10(Math.max(maxH * 1.5, minH * 10));
+  const lim = Math.max(3.5, ...pts.map(p => Math.abs(p.z) + 0.5));
+  const X = h => L + (Math.log10(h) - lo) / (hi - lo) * (W - L - R);
+  const Y = z => T + (lim - z) / (2 * lim) * (H - T - B);
+  const s = svgIn('funnel', W, H);
+  el('rect', { x: L, y: Y(1.96), width: W - L - R, height: Y(-1.96) - Y(1.96), fill: css('--band'), opacity: .2 }, s);
+  for (const z of [-3, -2, -1, 0, 1, 2, 3]) { el('line', { x1: L, x2: W - R, y1: Y(z), y2: Y(z), stroke: z ? css('--grid') : css('--line') }, s); const t = el('text', { x: L - 8, y: Y(z) + 4, 'text-anchor': 'end' }, s); t.textContent = z > 0 ? '+' + z : z; }
+  for (const z of [-1.96, 1.96]) el('line', { x1: L, x2: W - R, y1: Y(z), y2: Y(z), stroke: css('--band'), 'stroke-dasharray': '4 4' }, s);
+  const ticks = [[1 / 60, '1 min'], [1 / 6, '10 min'], [1, '1 h'], [10, '10 h'], [100, '100 h'], [1000, '1000 h']];
+  for (const [h, lab] of ticks) { const lh = Math.log10(h); if (lh < lo || lh > hi) continue; el('line', { x1: X(h), x2: X(h), y1: T, y2: H - B, stroke: css('--grid') }, s); const t = el('text', { x: X(h), y: H - 12, 'text-anchor': 'middle' }, s); t.textContent = lab; }
+  const t = el('text', { x: W - R, y: H - 0, 'text-anchor': 'end' }, s); t.textContent = 'focus time (log scale)';
+  for (const p of pts) {
+    const c = el('circle', { cx: X(hrs(p)), cy: Y(p.z), r: 4, fill: p.g === 'p' ? COL.Human : COL.Control, opacity: p.g === 'p' ? .85 : .55 }, s);
+    const ti = el('title', {}, c); ti.textContent = `${p.g === 'p' ? 'Participant' : 'Control'} · ${hrs(p) < 1 ? Math.round(hrs(p) * 60) + ' min' : hrs(p).toFixed(1) + ' h'} · z ${sgn(p.z)}`;
+  }
+}
+
+function drawBoards(){
+  const b = data[board];
+  const rule = board === 'overall'
+    ? `Combined z over all sessions · ids with at least ${data.rules.min_overall_focus_minutes} min of focus data`
+    : `Best session, corrected for the number of runs · runs of at least ${data.rules.min_run_focus_seconds} s`;
+  $('bpSub').textContent = rule;
+  table('bp', 'bpMeta', b.participants);
+  table('bc', 'bcMeta', b.control);
+}
+
+function table(id, metaId, bd){
+  if (!bd || !bd.top.length) { $(id).innerHTML = '<div class="empty">No ids qualify yet.</div>'; $(metaId).textContent = ''; return; }
+  const overall = board === 'overall';
+  const head = overall ? '<tr><th>#</th><th>Id</th><th>Focus h</th><th>Effect /10k</th><th>z</th><th>p</th></tr>'
+                       : '<tr><th>#</th><th>Id</th><th>Best z</th><th>Runs</th><th>Adjusted z</th><th>Date</th></tr>';
+  let rows = '', luckDone = false;
+  const luckRow = `<tr class="luck"><td colspan="6">Luck line: the best of ${bd.qualifying_ids} ids would reach about z ${sgn(bd.luck_z)} by chance</td></tr>`;
+  bd.top.forEach((e, i) => {
+    const score = overall ? e.z : e.adjusted_z;
+    if (!luckDone && score < bd.luck_z) { rows += luckRow; luckDone = true; }
+    const me = myTag && e.tag === myTag ? ' class="me"' : '';
+    rows += overall
+      ? `<tr${me}><td class="rank">${i + 1}</td><td class="tag">${esc(e.tag)}</td><td>${fmt(e.focus_hours)}</td><td>${sgn(e.effect_per_10k)}</td><td class="z">${sgn(e.z)}</td><td>${fmtP(e.p)}</td></tr>`
+      : `<tr${me}><td class="rank">${i + 1}</td><td class="tag">${esc(e.tag)}</td><td>${sgn(e.best_z)}</td><td>${e.runs}</td><td class="z">${sgn(e.adjusted_z)}</td><td>${esc(e.date)}</td></tr>`;
+  });
+  if (!luckDone) rows += luckRow;
+  $(id).innerHTML = `<table><thead>${head}</thead><tbody>${rows}</tbody></table>`;
+  $(metaId).textContent = `${bd.qualifying_ids} id${bd.qualifying_ids === 1 ? '' : 's'} qualify · showing the top ${Math.min(bd.top.length, data.rules.top_n)}`;
+}
+
+function drawMe(){
+  if (!myTag) { $('meCard').hidden = true; return; }
+  const on = ['overall', 'single_run'].filter(k => data[k].participants.top.some(e => e.tag === myTag) || data[k].control.top.some(e => e.tag === myTag));
+  $('meCard').hidden = false;
+  $('meText').innerHTML = `This browser's id shows as <b class="mono">${esc(myTag)}</b>. ` + (on.length
+    ? `It is in the top 10 on ${on.map(k => k === 'overall' ? 'Best overall' : 'Best single run').join(' and ')}, highlighted below.`
+    : 'It isn’t in a top 10 right now. Your own sessions and their analysis are always in the tool’s History.');
+}
+
+document.querySelectorAll('.tabs button').forEach(btn => btn.addEventListener('click', () => {
+  board = btn.dataset.board;
+  document.querySelectorAll('.tabs button').forEach(b => b.setAttribute('aria-selected', String(b === btn)));
+  if (data) drawBoards();
+}));
+
+findMyTag().then(t => { myTag = t; load(); });
+setInterval(load, 60000);
+let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (data) { drawLabels(); drawCumul(); drawFunnel(); } }, 150); });
+</script>
+</body>
+</html>
