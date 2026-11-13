@@ -1,6 +1,6 @@
-# focus-field-api
+# focus-field-api and focus-field-mcp
 
-Shared-data backend for Focus Field: one Cloudflare Worker and one D1 (SQLite) table.
+Shared-data backend for Focus Field: two Cloudflare Workers on one D1 (SQLite) database. `focus-field-api` serves the web page (below); `focus-field-mcp` is the MCP server for AI participants ([section below](#mcp-server-focus-field-mcp)).
 Live URL once deployed: `https://focus-field-api.dgrapov.workers.dev`.
 
 ## Endpoints
@@ -26,7 +26,9 @@ stats. No IP addresses, user agents or names.
 - `src/results.ts` leaderboards, luck line, cumulative z and funnel for `/api/results` (pure)
 - `src/validate.ts` input checks and the origin allowlist (pure)
 - `src/sql.ts` statements for the summary tables and snapshots
-- `schema.sql` the `sessions` table, summary tables and snapshots; `migrate-summary.sql` one-off build of the summaries
+- `schema.sql` the `sessions` table, summary tables, snapshots and the MCP tables; `migrate-summary.sql` rebuilds the (web-only) summaries
+- `migrations/0002-agents.sql` one-off: agent labels and MCP tables on a database made before them
+- `src/mcp.ts`, `src/mcp-core.ts`, `src/mcp-sql.ts`, `wrangler.mcp.jsonc` the MCP Worker
 - `test/*.test.ts` unit tests (vitest); `test/local-api.mjs` scripted checks against `wrangler dev`
 
 ## Run locally (no Cloudflare account needed)
@@ -79,3 +81,51 @@ D1's free plan allows 5 million rows read a day, so nothing a visitor does scans
   database, and again any time to recompute from scratch. `test/summary.test.ts` checks, in SQLite, that the
   per-save upserts equal that rebuild.
 - Test the cron locally: `npx wrangler dev --test-scheduled`, then `curl "http://localhost:8787/__scheduled?cron=7+*+*+*+*"`.
+
+## MCP server (focus-field-mcp)
+
+A second Worker, `src/mcp.ts` with `wrangler.mcp.jsonc`, on the same D1 database. URL: `https://focus-field-mcp.dgrapov.workers.dev/mcp`.
+It is stateless MCP over streamable HTTP: every request is a JSON-RPC POST answered with `application/json`, with no SSE stream and no MCP session ids. `GET /` returns a short description and the connect command.
+
+| Tool | Does |
+|---|---|
+| `register(agent?)` | Issues an anonymous key `ffk_…`. Only its SHA-256 is stored. |
+| `get_methods(key)` | The active rows of `mcp_methods` (`menu_version`, id, name, instruction), with results per method |
+| `start_session(key, method, custom_description?, poles=2, blocks=20)` | Fixes the blocks (even, 10–100), method, menu version and 1,000 draws per block; shuffles exactly half as rest |
+| `begin_block(key, session_id)` | Next block: focus → goal pole; rest → a hidden shadow pole and a neutral task. Nothing drawn. Calling it again returns the same open block. |
+| `draw_block(key, session_id, block_id, attention_log, self_rating?)` | Refuses blocks that were not begun or were already drawn, and calls with no log (or no 1–5 rating on a focus block). **Then** draws, stores the block, and updates the session and `agg_method` |
+| `finish_session(key, session_id, reflection?)` | Closes the session; undrawn blocks are dropped |
+| `get_totals()` | Agents by label and by method, plus the human totals snapshot |
+
+Prompt `focus_field_protocol` holds the protocol text. The full spec is `dev/MCP-ATTENTION-PROTOCOL.md`, kept locally.
+
+**Data.** Agent sessions are rows in `sessions` with `source = 'mcp'`, label `AI-public`, or `AI` for a key marked `trusted = 1` by hand. Each block is a row in `mcp_blocks`: kind, pole, `begun_at`, `drawn_at`, `attend_ms`, counts, hits, `attention_log`, `self_rating`. Agent sessions never enter `agg_id_poles`, `agg_day` or `agg_runs`, and `migrate-summary.sql` rebuilds from web labels only. Agent results are summed per drawn block in `agg_method(label, method, menu_version, kind, poles)`.
+
+**Scoring.**
+- Focus z: hits on goal poles. Rest z: hits on shadow poles, same formula.
+- Per method: Stouffer over pole counts, and focus − rest as (z_f − z_r)/√2.
+
+**Guards.**
+- Keys go in tool arguments, so an agent can register and continue in one conversation.
+- An `Origin` header, if sent, must be the site or localhost.
+- Requests are capped at 64 KB.
+- An open session idle for 30 minutes is closed as `abandoned`: its drawn blocks still count, and an undrawn block is dropped.
+- Daily caps, kept in `mcp_usage`: `MCP_MAX_KEYS_PER_DAY`, `MCP_MAX_SESSIONS_PER_DAY`, `MCP_MAX_BLOCKS_PER_DAY` (8,000 ≈ 40,000 of the 100,000 free row writes), sessions per key, and open sessions per key.
+- `MCP_REGISTRATION: "closed"` stops new keys.
+
+**Methods menu.** The menu is data: edit `mcp_methods` rows, insert a new `menu_version`, then set the old rows' `active = 0`. Results are kept per menu version.
+
+```bash
+npx wrangler d1 execute focus-field-db --local --file=./migrations/0002-agents.sql   # once, on an existing local db
+npx wrangler dev -c wrangler.mcp.jsonc --port 8790                                 # local MCP server
+claude mcp add --transport http focus-field-local http://localhost:8790/mcp         # or use --mcp-config for one run
+
+# production, in this order:
+npx wrangler d1 execute focus-field-db --remote --file=./migrations/0002-agents.sql
+npx wrangler deploy -c wrangler.mcp.jsonc
+```
+
+Admin by SQL:
+- Mark Harold's key trusted: `UPDATE agent_keys SET trusted = 1 WHERE id = '<key_id>'`.
+- Revoke a key: `UPDATE agent_keys SET revoked = 1 WHERE id = '…'`.
+

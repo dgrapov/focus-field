@@ -1,0 +1,29 @@
+{
+  // Focus Field MCP server (src/mcp.ts): a second Worker on the same D1 database as focus-field-api.
+  //   npx wrangler dev -c wrangler.mcp.jsonc --port 8790        (local, shares the local D1 with `npm run dev`)
+  //   npx wrangler deploy -c wrangler.mcp.jsonc                  (https://focus-field-mcp.dgrapov.workers.dev/mcp)
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "focus-field-mcp",
+  "main": "src/mcp.ts",
+  "compatibility_date": "2026-10-20",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "focus-field-db",
+      "database_id": "45dd86d7-de7b-4816-98a0-483178e206df"
+    }
+  ],
+  "vars": {
+    // "open": any agent may register(); "closed": no new keys (existing keys keep working).
+    "MCP_REGISTRATION": "open",
+    // Daily caps (UTC day). The free tier allows 100,000 Worker requests and 100,000 D1 row writes a day, shared with
+    // the web API. A block costs two requests (begin, draw) and about five row writes, so 8,000 blocks ≈ 40,000 writes.
+    "MCP_MAX_KEYS_PER_DAY": "50",
+    "MCP_MAX_SESSIONS_PER_DAY": "300",
+    "MCP_MAX_BLOCKS_PER_DAY": "8000",
+    "MCP_MAX_SESSIONS_PER_KEY_PER_DAY": "10",
+    "MCP_MAX_SESSIONS_PER_TRUSTED_KEY_PER_DAY": "100",
+    "MCP_MAX_OPEN_PER_KEY": "2"
+  }
+}

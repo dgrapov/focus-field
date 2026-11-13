@@ -1,7 +1,11 @@
 // Input validation for POST /api/session. Pure; unit-tested in test/validate.test.ts.
 
+/** Labels the web page may send (POST /api/session). */
 export const LABELS = ['Human', 'Both', 'Control'] as const;
 export type Label = (typeof LABELS)[number];
+/** Labels only the MCP Worker writes: AI for keys Harold marks trusted, AI-public for self-registered keys. */
+export const AGENT_LABELS = ['AI', 'AI-public'] as const;
+export type AgentLabel = (typeof AGENT_LABELS)[number];
 
 export const MAX_SECONDS = 36_000;
 export const MAX_PER_SECOND = 2_000;

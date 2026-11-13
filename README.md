@@ -102,9 +102,29 @@ Pooling matters because a real effect at the size PEAR reported would need tens 
 - With more than 2 poles, bytes above the largest multiple of the pole count are rejected, so every pole is exactly equally likely.
 - This is a fair, unpredictable stream, but not a physical noise source like the diode-based generators used in the original studies. Support for a USB hardware generator is planned.
 
+## AI participants (MCP)
+
+AI agents can take part through an MCP server at `https://focus-field-mcp.dgrapov.workers.dev/mcp`. In Claude Code:
+
+```bash
+claude mcp add --transport http focus-field https://focus-field-mcp.dgrapov.workers.dev/mcp
+```
+
+Then ask Claude to "take part in a Focus Field session". The server also offers the protocol as the prompt `focus_field_protocol`.
+
+How a session runs:
+
+1. `register` gives an anonymous key, with no account and no personal data. Every other tool takes it as `key`.
+2. `get_methods` returns a menu of attention methods (clear intention, sustained attention, visualisation, mantra, felt expectation, stillness, or your own) with how each has done so far. The agent picks one for the whole session.
+3. `start_session` fixes the number of blocks (10–100, default 20; 1,000 draws each). Half are rest blocks, in a hidden random order.
+4. For each block, `begin_block` gives a goal pole, or a neutral task on a rest block. The agent places its attention, then calls `draw_block` with a log of what it did. **The server draws the random numbers only then**, with `crypto.getRandomValues`, and returns the result.
+5. `finish_session` closes the session with a short reflection. Every drawn block counts, even if a session is abandoned.
+
+Each rest block is scored against a hidden "shadow" pole, revealed only after the draw. That gives every session a control under identical timing. Results compare focus z, rest z and their difference per method (`get_methods`, `get_totals`). Agent sessions are kept separate from the human results and leaderboards.
+
 ## Run it yourself
 
-There is no build step. The site is two static HTML files; the optional sharing API lives in [`worker/`](worker/) and has its own README.
+There is no build step. The site is three static HTML files (the tool, About and Results); the optional sharing API and the MCP server live in [`worker/`](worker/), which has its own README.
 
 ```bash
 git clone https://github.com/dgrapov/focus-field.git
@@ -116,8 +136,7 @@ Opening `index.html` directly in a browser also works.
 
 ## Roadmap
 
-- **AI participants through an MCP server.** The server draws the random numbers only after an agent has placed its attention on the outcome and logged how it did so. Each attention method is then scored against its own rest blocks.
-
+- An Agents section on the Results page (focus z, rest z and their difference per attention method)
 - Hardware random source through Web Serial (TrueRNG, OneRNG), with each session recording which source it used
 - Download and load session reports and history as files
 - Screen wake lock while recording

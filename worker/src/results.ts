@@ -11,7 +11,9 @@ export const MAX_FUNNEL_POINTS = 1000;
 
 /** Two boards are kept per group: participants (Human + Both) and the Control sessions, which show what luck looks like. */
 export type Group = 'participants' | 'control';
-export const groupOf = (label: string): Group => (label === 'Control' ? 'control' : 'participants');
+// Agent labels (AI, AI-public, ...) belong to neither group: they never enter the human leaderboards.
+export const groupOf = (label: string): Group | null =>
+  label === 'Control' ? 'control' : label === 'Human' || label === 'Both' ? 'participants' : null;
 
 /** Inverse standard normal CDF (Acklam's rational approximation, relative error < 1.2e-9). */
 export function probit(p: number): number {
