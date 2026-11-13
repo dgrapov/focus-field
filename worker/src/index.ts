@@ -6,7 +6,7 @@
 
 import { sessionStats, stoufferFromGroups } from './stats';
 import { validateSession, originAllowed, TEST_SECRETS, LABELS } from './validate';
-import { overallBoard, runBoard, cumulativeByDay, tagFor, groupOf, MIN_OVERALL_DRAWS, MIN_RUN_DRAWS, TOP_N, type IdPolesRow, type RunRow, type DayRow } from './results';
+import { overallBoard, runBoard, cumulativeByDay, tagFor, groupOf, agentsSummary, type MethodAggRow, type MethodName, MIN_OVERALL_DRAWS, MIN_RUN_DRAWS, TOP_N, type IdPolesRow, type RunRow, type DayRow } from './results';
 import * as SQL from './sql';
 
 // Minimal binding types (kept local so the only dev dependencies are wrangler and vitest).
@@ -116,10 +116,13 @@ interface Row { label: string; poles: number; sessions: number; seconds: number;
 /** Build both snapshots from the summary tables (rows grow with ids and days, not sessions). */
 export async function rebuild(env: Env): Promise<{ totals: string; results: string }> {
   const db = env.DB;
-  const [idRows, runRows, dayRows] = await Promise.all([
+  const [idRows, runRows, dayRows, methodRows, methodNames] = await Promise.all([
     db.prepare(SQL.READ_ID_POLES).all<IdPolesRow>(),
     db.prepare(SQL.READ_RUNS).all<RunRow>(),
     db.prepare(SQL.READ_DAYS).all<DayRow>(),
+    // Agents (MCP Worker writes these; tables come from migrations/0002-agents.sql). Missing tables → no agents section.
+    db.prepare(SQL.READ_METHOD_AGG).all<MethodAggRow>().catch(() => ({ results: [] as MethodAggRow[] })),
+    db.prepare(SQL.READ_METHOD_NAMES).all<MethodName>().catch(() => ({ results: [] as MethodName[] })),
   ]);
   const built = new Date().toISOString();
 
@@ -149,6 +152,7 @@ export async function rebuild(env: Env): Promise<{ totals: string; results: stri
     single_run: { participants: rp, control: rc },
     cumulative: cumulativeByDay(dayRows.results, LABELS),
     funnel: { participants: op.funnel, control: oc.funnel },
+    agents: agentsSummary(methodRows.results, methodNames.results),
   });
 
   await db.batch([

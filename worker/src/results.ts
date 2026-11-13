@@ -141,3 +141,40 @@ export async function tagFor(pid: string): Promise<string> {
   const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pid));
   return [...new Uint8Array(h)].slice(0, 3).map(b => b.toString(16).padStart(2, '0')).join('');
 }
+
+// ---------- agents (MCP), for the Results page: same pooling as the MCP server's get_totals ----------
+export interface MethodAggRow { label: string; method: string; menu_version: string; kind: 'focus' | 'rest'; poles: number; sessions: number; n: number; hits: number }
+export interface MethodName { menu_version: string; id: string; name: string }
+
+function poolAgents(rows: MethodAggRow[]) {
+  const side = (kind: 'focus' | 'rest') => {
+    const rs = rows.filter(r => r.kind === kind);
+    let num = 0, den = 0;
+    for (const r of rs) {
+      const n = Number(r.n), p = 1 / Number(r.poles);
+      if (!(n > 0)) continue;
+      num += (Number(r.hits) - n * p) / Math.sqrt(p * (1 - p)); den += n;
+    }
+    const z = den > 0 ? num / Math.sqrt(den) : null;
+    return { draws: den, z: z === null ? null : round(z), p: z === null ? null : pUp(z) };
+  };
+  const f = side('focus'), r = side('rest');
+  const d = f.z === null || r.z === null ? null : (f.z - r.z) / Math.SQRT2;   // independent N(0,1) under chance
+  return {
+    sessions: rows.filter(x => x.kind === 'focus').reduce((a, x) => a + Number(x.sessions), 0),
+    focus: f, rest: r, focus_minus_rest: { z: d === null ? null : round(d), p: d === null ? null : pUp(d) },
+  };
+}
+
+/** Agents by label (AI = Harold's trusted key, AI-public = everyone else) and by method + menu version. */
+export function agentsSummary(rows: MethodAggRow[], names: MethodName[]) {
+  const nameOf = (id: string, v: string) => names.find(m => m.id === id && m.menu_version === v)?.name ?? id;
+  const methods = [...new Set(rows.map(r => r.method + '\u0000' + r.menu_version))].sort();
+  return {
+    labels: ['AI', 'AI-public'].map(label => ({ label, ...poolAgents(rows.filter(r => r.label === label)) })),
+    by_method: methods.map(k => {
+      const [method, menu_version] = k.split('\u0000');
+      return { method, name: nameOf(method, menu_version), menu_version, ...poolAgents(rows.filter(r => r.method === method && r.menu_version === menu_version)) };
+    }).sort((a, b) => b.sessions - a.sessions),
+  };
+}

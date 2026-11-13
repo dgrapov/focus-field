@@ -104,3 +104,33 @@ describe('tagFor', () => {
     expect(id.startsWith(t)).toBe(false);
   });
 });
+
+import { agentsSummary } from '../src/results';
+import { diffZ } from '../src/mcp-core';
+
+describe('agentsSummary', () => {
+  const rows = [
+    { label: 'AI', method: 'intent', menu_version: 'v1', kind: 'focus' as const, poles: 2, sessions: 2, n: 10000, hits: 5100 },
+    { label: 'AI', method: 'intent', menu_version: 'v1', kind: 'rest' as const, poles: 2, sessions: 2, n: 10000, hits: 4980 },
+    { label: 'AI-public', method: 'mantra', menu_version: 'v1', kind: 'focus' as const, poles: 4, sessions: 1, n: 5000, hits: 1300 },
+    { label: 'AI-public', method: 'mantra', menu_version: 'v1', kind: 'rest' as const, poles: 4, sessions: 1, n: 5000, hits: 1240 },
+  ];
+  const names = [{ menu_version: 'v1', id: 'intent', name: 'Clear intention' }];
+  const out = agentsSummary(rows, names);
+  it('pools by label and by method, matching the MCP server formulas', () => {
+    const ai = out.labels.find(l => l.label === 'AI')!;
+    const zf = stoufferFromGroups([{ poles: 2, n: 10000, hits: 5100 }]).z!, zr = stoufferFromGroups([{ poles: 2, n: 10000, hits: 4980 }]).z!;
+    expect(ai.sessions).toBe(2);
+    expect(ai.focus.z).toBeCloseTo(zf, 3);
+    expect(ai.rest.z).toBeCloseTo(zr, 3);
+    expect(ai.focus_minus_rest.z!).toBeCloseTo(diffZ(zf, zr).z!, 3);
+  });
+  it('names methods from the menu, falls back to the id, sorts by sessions', () => {
+    expect(out.by_method.map(m => [m.method, m.name])).toEqual([['intent', 'Clear intention'], ['mantra', 'mantra']]);
+  });
+  it('is empty-safe', () => {
+    const e = agentsSummary([], []);
+    expect(e.by_method).toEqual([]);
+    expect(e.labels[0].focus.z).toBeNull();
+  });
+});

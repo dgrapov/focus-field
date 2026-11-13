@@ -37,3 +37,7 @@ export const READ_SNAPSHOT = `SELECT body FROM snapshots WHERE key = ?1`;
 export const WRITE_SNAPSHOT =
   `INSERT INTO snapshots (key, body, built_at) VALUES (?1, ?2, ?3)
    ON CONFLICT (key) DO UPDATE SET body = excluded.body, built_at = excluded.built_at`;
+
+// Agents (written by the MCP Worker, src/mcp.ts); read hourly into the /api/results snapshot.
+export const READ_METHOD_AGG = `SELECT label, method, menu_version, kind, poles, sessions, n, hits FROM agg_method`;
+export const READ_METHOD_NAMES = `SELECT menu_version, id, name FROM mcp_methods`;

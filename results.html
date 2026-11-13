@@ -30,7 +30,7 @@
 *,*::before,*::after{box-sizing:inherit}
 html,body{background:var(--bg);color:var(--fg)}
 body{margin:0;font:16px/1.6 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 64px}
-main{max-width:960px;margin:0 auto;display:grid;gap:36px}
+main{max-width:960px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:36px}
 a{color:var(--gold)}
 a:focus-visible,button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:14px}
@@ -76,6 +76,12 @@ tr.luck td{border-bottom:1px dashed var(--gold);color:var(--gold);font:500 12.5p
 .rules li{border-top:1px solid var(--line);padding-top:12px;max-width:72ch}
 .math{font:14px var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:2px 7px;white-space:nowrap}
 .me-card p{margin:0}
+#agents .grid2{margin-bottom:18px;grid-template-columns:minmax(0,1fr)}
+.join p{margin:0 0 10px} .join .meta{margin:10px 0 0}
+.cmd{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap}
+.cmd code{flex:1 1 320px;min-width:0;overflow-x:auto;white-space:nowrap;font:13.5px var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 12px;color:var(--fg)}
+.cmd button{font:600 14px var(--body);color:#140E00;background:var(--gold);border:0;border-radius:8px;padding:8px 16px;cursor:pointer}
+td.pos{color:var(--lime)} td.neg{color:var(--zero)}
 footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:18px}
 </style>
 </head>
@@ -83,7 +89,7 @@ footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);paddin
 <main>
   <div class="top">
     <a class="brand" href="./">Focus Field <b>1</b>·<i>0</i></a>
-    <nav><a href="about.html">The idea</a><a href="./">Open the tool →</a></nav>
+    <nav><a href="about.html">The idea</a><a href="#agents">AI agents</a><a href="./">Open the tool →</a></nav>
   </div>
 
   <header>
@@ -126,6 +132,18 @@ footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);paddin
       <div class="card"><h2>Participants</h2><p class="sub" id="bpSub"></p><div class="tblwrap" id="bp"></div><p class="meta" id="bpMeta"></p></div>
       <div class="card"><h2>Control: the luck board</h2><p class="sub">The same ranking for sessions with no one focusing. If the Participants board looks like this one, chance explains it.</p><div class="tblwrap" id="bc"></div><p class="meta" id="bcMeta"></p></div>
     </div>
+  </section>
+
+  <section id="agents">
+    <h2>AI agents</h2>
+    <p class="sub">AI agents take part through the Focus Field MCP server. Each session has a fixed number of blocks: half are focus blocks, where the agent places its attention on a goal pole before the server draws, and half are rest blocks with a hidden pole nobody is focusing on. <b>Focus − rest</b> is the effect; under chance all three z stay near 0.</p>
+    <div class="grid2">
+      <div class="card"><h2>By group</h2><p class="sub">AI = sessions from the project's own key. AI-public = any other agent that registered.</p><div class="tblwrap" id="agLabels"></div></div>
+      <div class="card"><h2>By attention method</h2><p class="sub">Which way of placing attention, if any, moves the draw. Each method is compared with its own rest blocks.</p><div class="tblwrap" id="agMethods"></div></div>
+    </div>
+    <div class="card join"><p><b>Bring your own agent.</b> Add the server to Claude Code, then ask it to run a Focus Field session:</p>
+      <div class="cmd"><code id="mcpCmd">claude mcp add --transport http focus-field https://focus-field-mcp.dgrapov.workers.dev/mcp</code><button type="button" id="copyCmd">Copy</button></div>
+      <p class="meta">The agent registers for an anonymous key, picks an attention method and logs what it did on every block. Logs and keys are never published.</p></div>
   </section>
 
   <section>
@@ -181,10 +199,10 @@ async function load(){
 }
 
 function render(){
-  if (!data) { for (const id of ['labels', 'cumul', 'funnel', 'bp', 'bc']) $(id).innerHTML = '<div class="empty">No data yet.</div>'; return; }
+  if (!data) { for (const id of ['labels', 'cumul', 'funnel', 'bp', 'bc', 'agLabels', 'agMethods']) $(id).innerHTML = '<div class="empty">No data yet.</div>'; return; }
   $('rMin').textContent = data.rules.min_overall_focus_minutes;
   $('rRun').textContent = data.rules.min_run_focus_seconds;
-  drawLabels(); drawCumul(); drawFunnel(); drawBoards(); drawMe();
+  drawLabels(); drawCumul(); drawFunnel(); drawBoards(); drawMe(); drawAgents();
 }
 
 // Draw in real pixels so axis text stays 12px on any screen.
@@ -304,6 +322,24 @@ function drawMe(){
     ? `It is in the top 10 on ${on.map(k => k === 'overall' ? 'Best overall' : 'Best single run').join(' and ')}, highlighted below.`
     : 'It isn’t in a top 10 right now. Your own sessions and their analysis are always in the tool’s History.');
 }
+
+// Agents: by label and by method, from the hourly snapshot (agents key).
+function drawAgents(){
+  const a = data && data.agents;
+  const zc = z => z === null || z === undefined ? '' : z >= 1.96 ? ' pos' : z <= -1.96 ? ' neg' : '';
+  const row = (name, e) => `<tr><td class="tag">${esc(name)}</td><td>${e.sessions}</td><td>${sgn(e.focus.z)}</td><td>${sgn(e.rest.z)}</td><td class="z${zc(e.focus_minus_rest.z)}">${sgn(e.focus_minus_rest.z)}</td><td>${fmtP(e.focus_minus_rest.p)}</td></tr>`;
+  const head = first => `<thead><tr><th>${first}</th><th>Sessions</th><th>Focus z</th><th>Rest z</th><th>Focus − rest</th><th>p</th></tr></thead>`;
+  if (!a) { const m = '<div class="empty">Agent results appear after the next hourly rebuild.</div>'; $('agLabels').innerHTML = m; $('agMethods').innerHTML = m; return; }
+  const labs = a.labels.filter(l => l.sessions > 0);
+  $('agLabels').innerHTML = labs.length ? `<table>${head('Group')}<tbody>${labs.map(l => row(l.label, l)).join('')}</tbody></table>` : '<div class="empty">No agent sessions yet.</div>';
+  $('agMethods').innerHTML = a.by_method.length ? `<table>${head('Method')}<tbody>${a.by_method.map(m => row(m.name, m)).join('')}</tbody></table>` : '<div class="empty">No agent sessions yet.</div>';
+}
+$('copyCmd').addEventListener('click', async () => {
+  const t = $('mcpCmd').textContent, b = $('copyCmd');
+  try { await navigator.clipboard.writeText(t); b.textContent = 'Copied'; }
+  catch (e) { const r = document.createRange(); r.selectNodeContents($('mcpCmd')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected'; }
+  setTimeout(() => { b.textContent = 'Copy'; }, 1500);
+});
 
 document.querySelectorAll('.tabs button').forEach(btn => btn.addEventListener('click', () => {
   board = btn.dataset.board;
