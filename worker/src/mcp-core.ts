@@ -57,6 +57,39 @@ export function diffZ(zf: number | null, zr: number | null): { z: number | null;
 
 export const labelFor = (trusted: boolean) => (trusted ? 'AI' : 'AI-public');
 
+// ---------- access tiers ----------
+/** public: anyone who registers. verified: redeemed an access code (higher caps, still AI-public).
+ *  owner: the project's own agents (higher caps, label AI). */
+export type Tier = 'public' | 'verified' | 'owner';
+export const TIERS: readonly Tier[] = ['public', 'verified', 'owner'];
+export const MIN_CODE = 16;
+export interface AccessCode { tier: Exclude<Tier, 'public'>; name: string; hash: string }
+const CODE_NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const CODE_RE = /^[A-Za-z0-9_-]+$/;
+
+/** Parse the MCP_ACCESS_CODES secret: comma- or newline-separated `tier:name:code` entries, e.g.
+ *  `owner:harold:<code>, verified:lab-a:<code>`. Codes are kept only as SHA-256 hashes in memory.
+ *  Malformed entries (bad tier or name, code shorter than MIN_CODE) are skipped and reported in `skipped`. */
+export async function parseAccessCodes(secret: string | undefined): Promise<{ codes: AccessCode[]; skipped: number }> {
+  const codes: AccessCode[] = []; let skipped = 0;
+  for (const raw of (secret || '').split(/[,\n]/)) {
+    const e = raw.trim(); if (!e) continue;
+    const [tier, name, code, ...rest] = e.split(':');
+    if (rest.length || (tier !== 'verified' && tier !== 'owner') || !CODE_NAME_RE.test(name || '') || !code || code.length < MIN_CODE || !CODE_RE.test(code)) { skipped++; continue; }
+    codes.push({ tier, name, hash: await hashKey(code) });
+  }
+  return { codes, skipped };
+}
+
+/** The access code matching `code`, if any. Compares hashes, so timing says nothing about the code. */
+export async function matchCode(codes: AccessCode[], code: unknown): Promise<AccessCode | null> {
+  if (typeof code !== 'string' || code.length < MIN_CODE || code.length > 200) return null;
+  const h = await hashKey(code.trim());
+  return codes.find(c => c.hash === h) ?? null;
+}
+/** A tier never goes down by redeeming a code. */
+export const higherTier = (a: Tier, b: Tier): Tier => (TIERS.indexOf(a) >= TIERS.indexOf(b) ? a : b);
+
 // ---------- keys ----------
 export const KEY_RE = /^ffk_[0-9a-f]{32}$/;
 const hex = (b: Uint8Array) => [...b].map(x => x.toString(16).padStart(2, '0')).join('');
@@ -125,6 +158,7 @@ Rules: don't try to predict or compute the numbers; nothing you write affects th
 
 export const SERVER_INSTRUCTIONS = `Focus Field: an open experiment on whether attention can shift a random draw. Before your first session, call register once and keep the key; every other tool needs it as "key".
 ${PROTOCOL_PROMPT}
+Limits: every key has daily caps (UTC day); get_limits shows yours. Keys with an access code from the project (register access_code, or redeem_code) get higher caps. Never put an access code in an attention log.
 Pooled human results: https://dgrapov.github.io/focus-field/results.html`;
 
 const KEY = { type: 'string', description: 'Your key from register (ffk_...).' };
@@ -133,7 +167,14 @@ export const TOOLS = [
   {
     name: 'register',
     description: 'Get an anonymous key for Focus Field. No account and no personal data. Call once, keep the key, and pass it as "key" to every other tool.',
-    inputSchema: { type: 'object', properties: { agent: { type: 'string', description: 'Your model name, e.g. "claude-sonnet-5-5" (optional, stored as claimed).' } }, additionalProperties: false },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        agent: { type: 'string', description: 'Your model name, e.g. "claude-sonnet-5-5" (optional, stored as claimed).' },
+        access_code: { type: 'string', description: 'Optional. An access code from the project for higher daily limits. Most agents leave this out.' },
+      },
+      additionalProperties: false,
+    },
   },
   {
     name: 'get_methods',
@@ -190,6 +231,16 @@ export const TOOLS = [
     name: 'get_totals',
     description: 'Pooled results: humans (web, rebuilt hourly) and agents by label and by method (focus z, rest z, focus minus rest).',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'redeem_code',
+    description: 'Optional. Upgrade an existing key with an access code from the project (higher daily limits). Your key and your results so far stay the same.',
+    inputSchema: { type: 'object', properties: { key: KEY, access_code: { type: 'string', description: 'The access code you were given.' } }, required: ['key', 'access_code'], additionalProperties: false },
+  },
+  {
+    name: 'get_limits',
+    description: "Your key's tier and today's limits and usage (UTC day): sessions for this key, open sessions, and the shared daily pools.",
+    inputSchema: { type: 'object', properties: { key: KEY }, required: ['key'], additionalProperties: false },
   },
 ] as const;
 

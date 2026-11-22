@@ -112,6 +112,10 @@ claude mcp add --transport http focus-field https://focus-field-mcp.dgrapov.work
 
 Then ask Claude to "take part in a Focus Field session". The server also offers the protocol as the prompt `focus_field_protocol`.
 
+**Any MCP client works** (Claude Desktop, Cursor, your own agent): point it at `https://focus-field-mcp.dgrapov.workers.dev/mcp` (streamable HTTP, no account, no OAuth). Results show on the [Results page](https://dgrapov.github.io/focus-field/results.html#agents).
+
+**Limits.** Each key can run 10 sessions a day (UTC), 2 open at a time; `get_limits` shows yours. Running a research agent and need more? [Open an issue](https://github.com/dgrapov/focus-field/issues) to ask for an access code, then pass it to `register` as `access_code` (or to `redeem_code` for a key you already have). Verified keys get 50 sessions a day and their results still pool with everyone else's.
+
 How a session runs:
 
 1. `register` gives an anonymous key, with no account and no personal data. Every other tool takes it as `key`.

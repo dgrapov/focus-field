@@ -53,8 +53,10 @@ CREATE TABLE IF NOT EXISTS agent_keys (
   key_hash TEXT NOT NULL UNIQUE,       -- SHA-256 hex of the key; the key itself is never stored
   created_at TEXT NOT NULL,
   agent TEXT,                          -- model name as claimed at register()
-  trusted INTEGER NOT NULL DEFAULT 0,  -- 1 = Harold's own key (label AI instead of AI-public); set by hand with SQL
-  revoked INTEGER NOT NULL DEFAULT 0
+  trusted INTEGER NOT NULL DEFAULT 0,  -- legacy: 1 = owner key; 0003 copies it into tier = 'owner'
+  revoked INTEGER NOT NULL DEFAULT 0,
+  tier TEXT NOT NULL DEFAULT 'public' CHECK (tier IN ('public','verified','owner')),   -- 0003: set by an access code
+  code_name TEXT                       -- 0003: name of the access code that set the tier (never the code)
 );
 CREATE TABLE IF NOT EXISTS mcp_blocks (
   session_id TEXT NOT NULL,
@@ -88,7 +90,9 @@ CREATE TABLE IF NOT EXISTS mcp_usage (  -- daily counters for the global caps (U
   day TEXT PRIMARY KEY,
   keys INTEGER NOT NULL DEFAULT 0,
   sessions INTEGER NOT NULL DEFAULT 0,
-  blocks INTEGER NOT NULL DEFAULT 0
+  blocks INTEGER NOT NULL DEFAULT 0,
+  public_sessions INTEGER NOT NULL DEFAULT 0,   -- 0003: the part of sessions/blocks from public-tier keys
+  public_blocks INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_key ON sessions(key_id, status);
 INSERT OR IGNORE INTO mcp_methods (menu_version, id, name, instruction, sort) VALUES

@@ -12,6 +12,7 @@ import { zOf } from '../src/mcp-core';
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const phase1 = read('./fixtures/schema-3acfde9.sql');
 const migration = read('../migrations/0002-agents.sql');
+const migration3 = read('../migrations/0003-access-tiers.sql');
 const schema = read('../schema.sql');
 const summarySql = read('../migrate-summary.sql');
 
@@ -32,6 +33,8 @@ function d1(db: DatabaseSync): D1Database {
 }
 
 let db: DatabaseSync, env: McpEnv, n = 0;
+const OWNER_CODE = 'own3r-code-AAAAAAAAAAAA', VERIFIED_CODE = 'verified_code_BBBBBBBBBB';
+const OWNER = `owner:harold:${OWNER_CODE}`, VERIFIED = `verified:lab-a:${VERIFIED_CODE}`;
 const call = async (name: string, args: Record<string, unknown> = {}, e = env, now?: Date) => {
   const r = await handleRpc({ jsonrpc: '2.0', id: ++n, method: 'tools/call', params: { name, arguments: args } }, e, now);
   const res = (r as { result: { structuredContent: Record<string, any>; isError?: boolean } }).result;
@@ -62,7 +65,8 @@ beforeEach(() => {
   db.exec(phase1);
   webSession('Human', 'web-aaaaaaaa');
   db.exec(migration);
-  env = { DB: d1(db) };
+  db.exec(migration3);
+  env = { DB: d1(db), MCP_ACCESS_CODES: OWNER + ',' + VERIFIED + ', bogus:x:short' };
 });
 
 describe('migration 0002', () => {
@@ -95,7 +99,7 @@ describe('protocol', () => {
     expect(j.result).toMatchObject({ protocolVersion: '2025-06-18', capabilities: { tools: {}, prompts: {} } });
     expect(j.result.instructions).toContain('begin_block');
     expect((await post({ jsonrpc: '2.0', method: 'notifications/initialized' })).status).toBe(202);
-    expect(((await (await post({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).json()) as any).result.tools).toHaveLength(7);
+    expect(((await (await post({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).json()) as any).result.tools).toHaveLength(9);
     const pr = ((await (await post({ jsonrpc: '2.0', id: 3, method: 'prompts/get', params: { name: 'focus_field_protocol' } })).json()) as any).result;
     expect(pr.messages[0].content.text).toContain('Call get_methods()');
     expect(await (await post([{ jsonrpc: '2.0', id: 4, method: 'ping' }, { jsonrpc: '2.0', method: 'notifications/initialized' }])).json()).toEqual([{ jsonrpc: '2.0', id: 4, result: {} }]);
@@ -260,6 +264,49 @@ describe('keys, caps, idle', () => {
     const reg = await call('register', {});
     db.prepare('UPDATE agent_keys SET trusted = 1').run();
     expect((await call('start_session', { key: reg.key, method: 'intent' })).label).toBe('AI');
+  });
+
+  it('register with an access code sets the tier and skips the public key cap', async () => {
+    const full: McpEnv = { ...env, MCP_MAX_KEYS_PER_DAY: '0' };
+    expect((await call('register', {}, full)).error).toContain('daily limit');
+    const v = await call('register', { access_code: VERIFIED_CODE }, full);
+    expect(v).toMatchObject({ isError: false, tier: 'verified', limits: { sessions_per_key: 50, open_per_key: 4 } });
+    expect(q('SELECT tier, code_name, trusted FROM agent_keys')).toEqual({ tier: 'verified', code_name: 'lab-a', trusted: 0 });
+    expect((await call('start_session', { key: v.key, method: 'intent' })).label).toBe('AI-public');
+    expect((await call('register', { access_code: 'wrong-code-CCCCCCCCCCCC' })).error).toContain('not recognised');
+    expect((await call('register', { access_code: 'short' })).error).toContain('not recognised');
+    expect(q('SELECT COUNT(*) AS c FROM agent_keys').c).toBe(1);                  // a bad code issues no key
+    expect(q('SELECT keys FROM mcp_usage').keys).toBe(0);                          // code keys don't use the public key cap
+  });
+
+  it('redeem_code upgrades an existing key and never downgrades it', async () => {
+    const reg = await call('register', {});
+    expect((await call('redeem_code', { key: reg.key, access_code: 'nope-nope-nope-nope' })).error).toContain('not recognised');
+    expect(await call('redeem_code', { key: reg.key, access_code: OWNER_CODE })).toMatchObject({ tier: 'owner', limits: { sessions_per_key: 100 } });
+    expect((await call('start_session', { key: reg.key, method: 'intent' })).label).toBe('AI');
+    expect((await call('redeem_code', { key: reg.key, access_code: VERIFIED_CODE })).tier).toBe('owner');
+    expect(q('SELECT tier, trusted FROM agent_keys')).toEqual({ tier: 'owner', trusted: 1 });
+    expect((await call('get_limits', { key: reg.key })).tier).toBe('owner');
+  });
+
+  it('ignores access codes when the secret is unset', async () => {
+    expect((await call('register', { access_code: OWNER_CODE }, { DB: env.DB })).error).toContain('not recognised');
+  });
+
+  it('public keys stop at the public share of the pools; verified keys keep the headroom', async () => {
+    const pub = await call('register', {}), ver = await call('register', { access_code: VERIFIED_CODE });
+    const tight: McpEnv = { ...env, MCP_MAX_PUBLIC_SESSIONS_PER_DAY: '1', MCP_MAX_PUBLIC_BLOCKS_PER_DAY: '1', MCP_MAX_BLOCKS_PER_DAY: '2' };
+    const s1 = await call('start_session', { key: pub.key, method: 'intent' }, tight);
+    expect((await call('start_session', { key: pub.key, method: 'intent' }, tight)).error).toContain('daily limit for agent sessions');
+    expect((await block(pub.key, s1.session_id, tight)).draw!.isError).toBe(false);
+    expect((await block(pub.key, s1.session_id, tight)).draw!.error).toContain('daily limit for agent blocks');
+    const s2 = await call('start_session', { key: ver.key, method: 'intent' }, tight);
+    expect(s2.isError).toBe(false);
+    expect((await block(ver.key, s2.session_id, tight)).draw!.isError).toBe(false);
+    expect((await block(ver.key, s2.session_id, tight)).draw!.error).toContain('daily limit for agent blocks');   // 1 public + 1 verified = the total of 2
+    expect(q('SELECT sessions, blocks, public_sessions, public_blocks FROM mcp_usage')).toEqual({ sessions: 2, blocks: 2, public_sessions: 1, public_blocks: 1 });
+    const lim = await call('get_limits', { key: pub.key }, tight);
+    expect(lim).toMatchObject({ tier: 'public', this_key: { sessions_today: 1, sessions_per_day: 10 }, shared_pool: { blocks_used: 1, blocks_max: 1 } });
   });
 
   it('can close registration', async () => {

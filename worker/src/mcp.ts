@@ -5,6 +5,8 @@
 // One session: get_methods -> start_session -> (begin_block -> agent attends -> draw_block) x blocks -> finish_session.
 // The server draws the random numbers only inside draw_block, after the agent's attention log arrives.
 // Gatekeeping: anonymous keys passed as a tool argument, per-key and global daily caps in D1, an Origin check.
+// Tiers: public keys (anyone), verified and owner keys (an access code from the MCP_ACCESS_CODES secret) get higher
+// per-key caps, and public keys may use only part of the global daily pools, so the rest stays for verified agents.
 
 import { pUpper, stoufferFromGroups } from './stats';
 import { originAllowed } from './validate';
@@ -13,6 +15,7 @@ import {
   TOOLS, PROMPTS, PROTOCOL_PROMPT, SERVER_INSTRUCTIONS, REST_INSTRUCTION, negotiateVersion, drawBlock, shuffleSchedule,
   uniform, zOf, diffZ, labelFor, newKey, hashKey, KEY_RE, checkAgent, checkStart, checkSessionId, checkBlockId, checkLog,
   checkReflection, checkRating, IDLE_MINUTES, DRAWS_PER_BLOCK, type Kind, type Rand, cryptoRand,
+  parseAccessCodes, matchCode, higherTier, type Tier, type AccessCode,
 } from './mcp-core';
 
 // Minimal binding types (as in index.ts), so tests can pass an adapter over node:sqlite.
@@ -27,17 +30,27 @@ export interface McpEnv {
   MCP_MAX_SESSIONS_PER_DAY?: string;
   MCP_MAX_BLOCKS_PER_DAY?: string;
   MCP_MAX_SESSIONS_PER_KEY_PER_DAY?: string;
-  MCP_MAX_SESSIONS_PER_TRUSTED_KEY_PER_DAY?: string;
+  MCP_MAX_SESSIONS_PER_TRUSTED_KEY_PER_DAY?: string;   // owner tier
+  MCP_MAX_SESSIONS_PER_VERIFIED_KEY_PER_DAY?: string;
+  MCP_MAX_PUBLIC_SESSIONS_PER_DAY?: string;            // the share of MCP_MAX_SESSIONS_PER_DAY public keys may use
+  MCP_MAX_PUBLIC_BLOCKS_PER_DAY?: string;              // the share of MCP_MAX_BLOCKS_PER_DAY public keys may use
   MCP_MAX_OPEN_PER_KEY?: string;
+  MCP_MAX_OPEN_PER_TRUSTED_KEY?: string;               // verified and owner tiers
+  // Secret (npx wrangler secret put MCP_ACCESS_CODES -c wrangler.mcp.jsonc): "tier:name:code" entries, comma-separated.
+  MCP_ACCESS_CODES?: string;
 }
 
 const DEFAULTS = {
-  MCP_MAX_KEYS_PER_DAY: 50,
-  MCP_MAX_SESSIONS_PER_DAY: 300,
-  MCP_MAX_BLOCKS_PER_DAY: 8000,                 // ~5 D1 row writes per block → 40k of the 100k/day free writes
+  MCP_MAX_KEYS_PER_DAY: 50,                     // new public keys a day (keys made with an access code don't count)
+  MCP_MAX_SESSIONS_PER_DAY: 400,
+  MCP_MAX_PUBLIC_SESSIONS_PER_DAY: 300,
+  MCP_MAX_BLOCKS_PER_DAY: 12000,                // ~5 D1 row writes per block → 60k of the 100k/day free writes
+  MCP_MAX_PUBLIC_BLOCKS_PER_DAY: 8000,          // so 4,000 blocks a day stay for verified and owner keys
   MCP_MAX_SESSIONS_PER_KEY_PER_DAY: 10,
+  MCP_MAX_SESSIONS_PER_VERIFIED_KEY_PER_DAY: 50,
   MCP_MAX_SESSIONS_PER_TRUSTED_KEY_PER_DAY: 100,
   MCP_MAX_OPEN_PER_KEY: 2,
+  MCP_MAX_OPEN_PER_TRUSTED_KEY: 4,
 };
 const cap = (env: McpEnv, k: keyof typeof DEFAULTS) => { const v = Number(env[k]); return env[k] !== undefined && Number.isFinite(v) && v >= 0 ? v : DEFAULTS[k]; };
 
@@ -53,18 +66,42 @@ const today = (now: Date) => now.toISOString().slice(0, 10);
 const r4 = (x: number | null | undefined) => (x === null || x === undefined ? null : Math.round(x * 1e4) / 1e4);
 const cutoff = (now: Date) => new Date(now.getTime() - IDLE_MINUTES * 60_000).toISOString();
 
-async function usage(env: McpEnv, day: string) {
-  return (await env.DB.prepare(SQL.USAGE_GET).bind(day).first<{ keys: number; sessions: number; blocks: number }>()) || { keys: 0, sessions: 0, blocks: 0 };
+interface Usage { keys: number; sessions: number; blocks: number; public_sessions: number; public_blocks: number }
+async function usage(env: McpEnv, day: string): Promise<Usage> {
+  const u = await env.DB.prepare(SQL.USAGE_GET).bind(day).first<Usage>();
+  return { keys: Number(u?.keys ?? 0), sessions: Number(u?.sessions ?? 0), blocks: Number(u?.blocks ?? 0), public_sessions: Number(u?.public_sessions ?? 0), public_blocks: Number(u?.public_blocks ?? 0) };
 }
-const addUsage = (env: McpEnv, day: string, keys: number, sessions: number, blocks: number) => env.DB.prepare(SQL.USAGE_ADD).bind(day, keys, sessions, blocks).run();
+const addUsage = (env: McpEnv, day: string, keys: number, sessions: number, blocks: number, tier: Tier = 'public') =>
+  env.DB.prepare(SQL.USAGE_ADD).bind(day, keys, sessions, blocks, tier === 'public' ? sessions : 0, tier === 'public' ? blocks : 0).run();
 
-interface Key { id: string; trusted: boolean; agent: string | null }
+/** Per-tier caps. A public key also stops at the public share of the global pools (never above the global cap). */
+function limitsFor(env: McpEnv, tier: Tier) {
+  const sessionsTotal = cap(env, 'MCP_MAX_SESSIONS_PER_DAY'), blocksTotal = cap(env, 'MCP_MAX_BLOCKS_PER_DAY');
+  return {
+    sessions_per_key: cap(env, tier === 'owner' ? 'MCP_MAX_SESSIONS_PER_TRUSTED_KEY_PER_DAY' : tier === 'verified' ? 'MCP_MAX_SESSIONS_PER_VERIFIED_KEY_PER_DAY' : 'MCP_MAX_SESSIONS_PER_KEY_PER_DAY'),
+    open_per_key: cap(env, tier === 'public' ? 'MCP_MAX_OPEN_PER_KEY' : 'MCP_MAX_OPEN_PER_TRUSTED_KEY'),
+    sessions_total: sessionsTotal, blocks_total: blocksTotal,
+    sessions_public: Math.min(sessionsTotal, cap(env, 'MCP_MAX_PUBLIC_SESSIONS_PER_DAY')),
+    blocks_public: Math.min(blocksTotal, cap(env, 'MCP_MAX_PUBLIC_BLOCKS_PER_DAY')),
+  };
+}
+
+let codesMemo: { secret: string; codes: AccessCode[] } | null = null;
+async function accessCodes(env: McpEnv): Promise<AccessCode[]> {
+  const secret = env.MCP_ACCESS_CODES || '';
+  if (!codesMemo || codesMemo.secret !== secret) codesMemo = { secret, codes: (await parseAccessCodes(secret)).codes };
+  return codesMemo.codes;
+}
+const BAD_CODE = 'access_code: not recognised. Leave it out to use the public limits.';
+
+interface Key { id: string; trusted: boolean; tier: Tier; agent: string | null }
 async function auth(env: McpEnv, key: unknown): Promise<Key> {
   if (typeof key !== 'string' || !KEY_RE.test(key)) throw new ToolError('key: call register first and pass the key it returns (ffk_...)');
-  const row = await env.DB.prepare(SQL.FIND_KEY).bind(await hashKey(key)).first<{ id: string; trusted: number; revoked: number; agent: string | null }>();
+  const row = await env.DB.prepare(SQL.FIND_KEY).bind(await hashKey(key)).first<{ id: string; trusted: number; revoked: number; agent: string | null; tier: Tier | null }>();
   if (!row) throw new ToolError('key: unknown key; call register to get one');
   if (row.revoked) throw new ToolError('key: this key has been revoked');
-  return { id: row.id, trusted: !!row.trusted, agent: row.agent };
+  const tier: Tier = row.tier === 'verified' || row.tier === 'owner' ? row.tier : row.trusted ? 'owner' : 'public';
+  return { id: row.id, trusted: tier === 'owner', tier, agent: row.agent };
 }
 
 interface SessionRow {
@@ -120,12 +157,43 @@ const methodRows = async (env: McpEnv) => (await env.DB.prepare(SQL.READ_METHODS
 async function register(env: McpEnv, a: Obj, now: Date): Promise<Obj> {
   if ((env.MCP_REGISTRATION || 'open') === 'closed') throw new ToolError('register: new keys are not being issued right now');
   const agent = checkAgent(a.agent); if (!agent.ok) throw new ToolError(agent.error);
+  const hasCode = a.access_code !== undefined && a.access_code !== null && a.access_code !== '';
+  const code = hasCode ? await matchCode(await accessCodes(env), a.access_code) : null;
+  if (hasCode && !code) throw new ToolError(BAD_CODE);
   const day = today(now);
-  if ((await usage(env, day)).keys >= cap(env, 'MCP_MAX_KEYS_PER_DAY')) throw new ToolError('register: the daily limit for new keys is reached; try again tomorrow (UTC)');
+  if (!code && (await usage(env, day)).keys >= cap(env, 'MCP_MAX_KEYS_PER_DAY')) throw new ToolError('register: the daily limit for new keys is reached; try again tomorrow (UTC)');
   const { key, id } = newKey();
-  await env.DB.prepare(SQL.INSERT_KEY).bind(id, await hashKey(key), now.toISOString(), agent.value).run();
-  await addUsage(env, day, 1, 0, 0);
-  return { key, key_id: id, note: 'Keep this key and pass it as "key" to the other tools. It is shown only once and cannot be recovered. Next: get_methods.' };
+  const tier: Tier = code ? code.tier : 'public';
+  await env.DB.prepare(SQL.INSERT_KEY).bind(id, await hashKey(key), now.toISOString(), agent.value, tier, code?.name ?? null, tier === 'owner' ? 1 : 0).run();
+  await addUsage(env, day, code ? 0 : 1, 0, 0);
+  return { key, key_id: id, tier, limits: limitsFor(env, tier), note: 'Keep this key and pass it as "key" to the other tools. It is shown only once and cannot be recovered. Next: get_methods.' };
+}
+
+async function redeemCode(env: McpEnv, a: Obj): Promise<Obj> {
+  const k = await auth(env, a.key);
+  const code = await matchCode(await accessCodes(env), a.access_code);
+  if (!code) throw new ToolError(BAD_CODE);
+  const tier = higherTier(k.tier, code.tier);
+  await env.DB.prepare(SQL.SET_TIER).bind(k.id, tier, code.name, tier === 'owner' ? 1 : 0).run();
+  return {
+    key_id: k.id, tier, limits: limitsFor(env, tier),
+    note: tier === 'owner' ? 'Sessions you start from now on are labelled AI; earlier sessions keep their label.' : 'Higher daily limits apply from now on. Your results still pool as AI-public.',
+  };
+}
+
+async function getLimits(env: McpEnv, a: Obj, now: Date): Promise<Obj> {
+  const k = await auth(env, a.key);
+  const day = today(now), lim = limitsFor(env, k.tier), u = await usage(env, day);
+  const load = (await env.DB.prepare(SQL.KEY_LOAD).bind(k.id, day + 'T00:00:00.000Z').first<{ today: number; open: number }>()) || { today: 0, open: 0 };
+  const pub = k.tier === 'public';
+  return {
+    key_id: k.id, tier: k.tier, day, resets_at: new Date(Date.parse(day + 'T00:00:00Z') + 86_400_000).toISOString(),
+    this_key: { sessions_today: Number(load.today), sessions_per_day: lim.sessions_per_key, open_sessions: Number(load.open), open_max: lim.open_per_key },
+    shared_pool: pub
+      ? { sessions_used: u.public_sessions, sessions_max: lim.sessions_public, blocks_used: u.public_blocks, blocks_max: lim.blocks_public, note: 'Public keys share this part of the daily pool.' }
+      : { sessions_used: u.sessions, sessions_max: lim.sessions_total, blocks_used: u.blocks, blocks_max: lim.blocks_total },
+    blocks_per_session_max: 100,
+  };
 }
 
 async function getMethods(env: McpEnv, a: Obj): Promise<Obj> {
@@ -146,15 +214,16 @@ async function startSession(env: McpEnv, a: Obj, now: Date, rand: Rand): Promise
   const day = today(now), nowIso = now.toISOString();
   await closeIdle(env, k.id, now);
   const load = (await env.DB.prepare(SQL.KEY_LOAD).bind(k.id, day + 'T00:00:00.000Z').first<{ today: number; open: number }>()) || { today: 0, open: 0 };
-  if (Number(load.open) >= cap(env, 'MCP_MAX_OPEN_PER_KEY')) throw new ToolError(`start_session: you already have ${load.open} open session(s); finish them first (idle sessions close after ${IDLE_MINUTES} minutes)`);
-  const perKey = cap(env, k.trusted ? 'MCP_MAX_SESSIONS_PER_TRUSTED_KEY_PER_DAY' : 'MCP_MAX_SESSIONS_PER_KEY_PER_DAY');
-  if (Number(load.today) >= perKey) throw new ToolError(`start_session: this key's daily limit of ${perKey} sessions is reached; try again tomorrow (UTC)`);
-  if ((await usage(env, day)).sessions >= cap(env, 'MCP_MAX_SESSIONS_PER_DAY')) throw new ToolError('start_session: the daily limit for agent sessions is reached; try again tomorrow (UTC)');
+  const lim = limitsFor(env, k.tier);
+  if (Number(load.open) >= lim.open_per_key) throw new ToolError(`start_session: you already have ${load.open} open session(s); finish them first (idle sessions close after ${IDLE_MINUTES} minutes)`);
+  if (Number(load.today) >= lim.sessions_per_key) throw new ToolError(`start_session: this key's daily limit of ${lim.sessions_per_key} sessions is reached; try again tomorrow (UTC)`);
+  const u = await usage(env, day);
+  if (u.sessions >= lim.sessions_total || (k.tier === 'public' && u.public_sessions >= lim.sessions_public)) throw new ToolError('start_session: the daily limit for agent sessions is reached; try again tomorrow (UTC)');
 
   const id = crypto.randomUUID(), label = labelFor(k.trusted), menuVersion = menu.find(m => m.id === s.value.method)!.menu_version;
   const schedule = shuffleSchedule(s.value.blocks, rand);
   await env.DB.prepare(SQL.INSERT_SESSION).bind(id, nowIso, 'key-' + k.id, label, s.value.poles, k.id, k.agent, s.value.method, s.value.custom, menuVersion, s.value.blocks, JSON.stringify(schedule), DRAWS_PER_BLOCK).run();
-  await addUsage(env, day, 0, 1, 0);
+  await addUsage(env, day, 0, 1, 0, k.tier);
   return {
     session_id: id, label, method: s.value.method, menu_version: menuVersion, poles: s.value.poles, blocks: s.value.blocks, draws_per_block: DRAWS_PER_BLOCK,
     reminder: 'Half the blocks are rest blocks, in a hidden order. For each block: begin_block, then attend using your method, then draw_block with an honest attention_log. Every drawn block counts. End with finish_session.',
@@ -204,7 +273,8 @@ async function drawBlockTool(env: McpEnv, a: Obj, now: Date, rand: Rand): Promis
   const log = checkLog(a.attention_log); if (!log.ok) throw new ToolError(log.error);
   const rating = checkRating(a.self_rating, b.kind); if (!rating.ok) throw new ToolError(rating.error);
   const day = today(now);
-  if ((await usage(env, day)).blocks >= cap(env, 'MCP_MAX_BLOCKS_PER_DAY')) throw new ToolError('draw_block: the daily limit for agent blocks is reached; the block stays begun, try again tomorrow (UTC)');
+  const lim = limitsFor(env, k.tier), u = await usage(env, day);
+  if (u.blocks >= lim.blocks_total || (k.tier === 'public' && u.public_blocks >= lim.blocks_public)) throw new ToolError('draw_block: the daily limit for agent blocks is reached; the block stays begun, try again tomorrow (UTC)');
 
   // Only now, with the attention log in hand, draw the numbers.
   const K = Number(row.poles), n = Number(row.block_size) || DRAWS_PER_BLOCK;
@@ -221,7 +291,7 @@ async function drawBlockTool(env: McpEnv, a: Obj, now: Date, rand: Rand): Promis
   await env.DB.prepare(SQL.SESSION_AFTER_DRAW).bind(row.id, Number(row.seconds) + 1, gn, gh, after.goal_z, after.goal_p, rn, rh, after.rest_z, after.rest_p, now.toISOString(), Number(row.seconds)).run();
   const first = focus ? Number(row.goal_n) === 0 : Number(row.rest_n) === 0;
   await env.DB.prepare(SQL.UPSERT_METHOD).bind(row.label, row.method, row.menu_version, b.kind, K, first ? 1 : 0, n, hits).run();
-  await addUsage(env, day, 0, 0, 1);
+  await addUsage(env, day, 0, 0, 1, k.tier);
 
   const left = Number(row.planned_blocks) - (Number(row.seconds) + 1);
   return {
@@ -297,6 +367,8 @@ export async function handleRpc(msg: RpcReq, env: McpEnv, now = new Date(), rand
       try {
         let out: Obj;
         if (name === 'register') out = await register(env, args, now);
+        else if (name === 'redeem_code') out = await redeemCode(env, args);
+        else if (name === 'get_limits') out = await getLimits(env, args, now);
         else if (name === 'get_methods') out = await getMethods(env, args);
         else if (name === 'start_session') out = await startSession(env, args, now, rand);
         else if (name === 'begin_block') out = await beginBlock(env, args, now, rand);
@@ -329,6 +401,8 @@ export async function handleHttp(req: Request, env: McpEnv, rand: Rand = cryptoR
     return jsonResponse({
       name: 'Focus Field MCP server', mcp_endpoint: url.origin + '/mcp', transport: 'streamable HTTP (stateless, JSON responses)',
       connect: `claude mcp add --transport http focus-field ${url.origin}/mcp`,
+      contribute: 'Any MCP client works: point it at mcp_endpoint, then ask the agent to take part in a Focus Field session. No account needed.',
+      limits: 'Daily caps per key and per day (UTC). For higher limits for a research agent, ask for an access code: https://github.com/dgrapov/focus-field/issues',
       docs: 'https://github.com/dgrapov/focus-field#ai-participants-mcp', results: 'https://dgrapov.github.io/focus-field/results.html',
     });
   }

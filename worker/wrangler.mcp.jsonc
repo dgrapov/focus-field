@@ -18,12 +18,19 @@
     // "open": any agent may register(); "closed": no new keys (existing keys keep working).
     "MCP_REGISTRATION": "open",
     // Daily caps (UTC day). The free tier allows 100,000 Worker requests and 100,000 D1 row writes a day, shared with
-    // the web API. A block costs two requests (begin, draw) and about five row writes, so 8,000 blocks ≈ 40,000 writes.
+    // the web API. A block costs two requests (begin, draw) and about five row writes, so 12,000 blocks ≈ 60,000 writes.
+    // Public keys may use only the PUBLIC share of the pools; the rest stays for keys with an access code.
+    // Access codes are a secret, never a var:  npx wrangler secret put MCP_ACCESS_CODES -c wrangler.mcp.jsonc
+    //   value: "owner:<name>:<code>,verified:<name>:<code>"  (code: 16+ chars of A-Z a-z 0-9 _ -)
     "MCP_MAX_KEYS_PER_DAY": "50",
-    "MCP_MAX_SESSIONS_PER_DAY": "300",
-    "MCP_MAX_BLOCKS_PER_DAY": "8000",
+    "MCP_MAX_SESSIONS_PER_DAY": "400",
+    "MCP_MAX_PUBLIC_SESSIONS_PER_DAY": "300",
+    "MCP_MAX_BLOCKS_PER_DAY": "12000",
+    "MCP_MAX_PUBLIC_BLOCKS_PER_DAY": "8000",
     "MCP_MAX_SESSIONS_PER_KEY_PER_DAY": "10",
+    "MCP_MAX_SESSIONS_PER_VERIFIED_KEY_PER_DAY": "50",
     "MCP_MAX_SESSIONS_PER_TRUSTED_KEY_PER_DAY": "100",
-    "MCP_MAX_OPEN_PER_KEY": "2"
+    "MCP_MAX_OPEN_PER_KEY": "2",
+    "MCP_MAX_OPEN_PER_TRUSTED_KEY": "4"
   }
 }

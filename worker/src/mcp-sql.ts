@@ -2,14 +2,18 @@
 // statements. Agent sessions are rows in `sessions` (source = 'mcp') with one row per block in mcp_blocks.
 // They never touch agg_id_poles / agg_day / agg_runs; agent results are summed in agg_method instead.
 
-export const INSERT_KEY = `INSERT INTO agent_keys (id, key_hash, created_at, agent) VALUES (?1, ?2, ?3, ?4)`;
-export const FIND_KEY = `SELECT id, trusted, revoked, agent FROM agent_keys WHERE key_hash = ?1`;
+/** ?1 id, ?2 key hash, ?3 now, ?4 agent, ?5 tier, ?6 code name (NULL for public), ?7 trusted (1 = owner, legacy column) */
+export const INSERT_KEY = `INSERT INTO agent_keys (id, key_hash, created_at, agent, tier, code_name, trusted) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`;
+export const FIND_KEY = `SELECT id, trusted, revoked, agent, tier FROM agent_keys WHERE key_hash = ?1`;
+/** redeem_code. ?1 key id, ?2 tier, ?3 code name, ?4 trusted (1 = owner) */
+export const SET_TIER = `UPDATE agent_keys SET tier = ?2, code_name = ?3, trusted = ?4 WHERE id = ?1`;
 
-export const USAGE_GET = `SELECT keys, sessions, blocks FROM mcp_usage WHERE day = ?1`;
-/** ?1 day, ?2 keys, ?3 sessions, ?4 blocks (increments) */
+export const USAGE_GET = `SELECT keys, sessions, blocks, public_sessions, public_blocks FROM mcp_usage WHERE day = ?1`;
+/** ?1 day, ?2 keys, ?3 sessions, ?4 blocks, ?5 public sessions, ?6 public blocks (increments; public_* = keys of tier public) */
 export const USAGE_ADD =
-  `INSERT INTO mcp_usage (day, keys, sessions, blocks) VALUES (?1, ?2, ?3, ?4)
-   ON CONFLICT (day) DO UPDATE SET keys = keys + excluded.keys, sessions = sessions + excluded.sessions, blocks = blocks + excluded.blocks`;
+  `INSERT INTO mcp_usage (day, keys, sessions, blocks, public_sessions, public_blocks) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+   ON CONFLICT (day) DO UPDATE SET keys = keys + excluded.keys, sessions = sessions + excluded.sessions, blocks = blocks + excluded.blocks,
+     public_sessions = public_sessions + excluded.public_sessions, public_blocks = public_blocks + excluded.public_blocks`;
 
 /** The menu on offer: the active rows, in order. */
 export const METHODS = `SELECT menu_version, id, name, instruction FROM mcp_methods WHERE active = 1 ORDER BY sort, id`;

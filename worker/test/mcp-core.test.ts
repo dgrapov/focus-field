@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   drawBlock, shuffleSchedule, uniform, zOf, diffZ, labelFor, newKey, hashKey, KEY_RE, checkStart, checkLog, checkRating,
   checkReflection, checkAgent, checkSessionId, checkBlockId, negotiateVersion, TOOLS, PROMPTS, PROTOCOL_PROMPT, DRAWS_PER_BLOCK, type Rand,
-} from '../src/mcp-core';
+  parseAccessCodes, matchCode, higherTier } from '../src/mcp-core';
 import { chiSquareSf } from '../src/stats';
 
 const IDS = ['intent', 'sustain', 'visualize', 'mantra', 'feel', 'stillness', 'custom'];
@@ -75,6 +75,20 @@ describe('scoring', () => {
     expect(diffZ(null, 1)).toEqual({ z: null, p: null });
   });
 
+  it('parses access codes: tier:name:code, skipping malformed entries; matches by hash', async () => {
+    const good = 'abcdefghijklmnop', other = 'ZYXWVUTSRQPONMLK_-';
+    const { codes, skipped } = await parseAccessCodes(` owner:harold:${good},\nverified:lab-a:${other}, public:x:${good}, verified:Bad Name:${good}, verified:short:abc, verified:a:${good}:extra`);
+    expect(codes.map(c => [c.tier, c.name])).toEqual([['owner', 'harold'], ['verified', 'lab-a']]);
+    expect(skipped).toBe(4);
+    expect(JSON.stringify(codes)).not.toContain(good);                              // only hashes are kept
+    expect((await matchCode(codes, other))?.name).toBe('lab-a');
+    expect(await matchCode(codes, 'abcdefghijklmnoq')).toBeNull();
+    expect(await matchCode(codes, 42)).toBeNull();
+    expect((await parseAccessCodes(undefined)).codes).toEqual([]);
+    expect(higherTier('owner', 'verified')).toBe('owner');
+    expect(higherTier('public', 'verified')).toBe('verified');
+  });
+
   it('labels trusted keys AI and the rest AI-public', () => {
     expect(labelFor(true)).toBe('AI');
     expect(labelFor(false)).toBe('AI-public');
@@ -137,7 +151,7 @@ describe('MCP surface', () => {
   });
 
   it('lists the protocol tools in flow order, with object schemas', () => {
-    expect(TOOLS.map(t => t.name)).toEqual(['register', 'get_methods', 'start_session', 'begin_block', 'draw_block', 'finish_session', 'get_totals']);
+    expect(TOOLS.map(t => t.name)).toEqual(['register', 'get_methods', 'start_session', 'begin_block', 'draw_block', 'finish_session', 'get_totals', 'redeem_code', 'get_limits']);
     for (const t of TOOLS) expect(t.inputSchema.type).toBe('object');
     const draw = TOOLS.find(t => t.name === 'draw_block')!;
     expect(draw.inputSchema.required).toEqual(['key', 'session_id', 'block_id', 'attention_log']);

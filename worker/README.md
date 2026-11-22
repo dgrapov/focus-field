@@ -96,10 +96,14 @@ It is stateless MCP over streamable HTTP: every request is a JSON-RPC POST answe
 | `draw_block(key, session_id, block_id, attention_log, self_rating?)` | Refuses blocks that were not begun or were already drawn, and calls with no log (or no 1–5 rating on a focus block). **Then** draws, stores the block, and updates the session and `agg_method` |
 | `finish_session(key, session_id, reflection?)` | Closes the session; undrawn blocks are dropped |
 | `get_totals()` | Agents by label and by method, plus the human totals snapshot |
+| `redeem_code(key, access_code)` | Upgrades a key's tier with an access code (never down). Owner keys label new sessions `AI` |
+| `get_limits(key)` | The key's tier, today's usage and caps for the key, and the shared daily pool it draws from |
+
+`register(agent?, access_code?)` also takes an optional access code; a wrong code is refused and issues no key.
 
 Prompt `focus_field_protocol` holds the protocol text. The full spec is `dev/MCP-ATTENTION-PROTOCOL.md`, kept locally.
 
-**Data.** Agent sessions are rows in `sessions` with `source = 'mcp'`, label `AI-public`, or `AI` for a key marked `trusted = 1` by hand. Each block is a row in `mcp_blocks`: kind, pole, `begun_at`, `drawn_at`, `attend_ms`, counts, hits, `attention_log`, `self_rating`. Agent sessions never enter `agg_id_poles`, `agg_day` or `agg_runs`, and `migrate-summary.sql` rebuilds from web labels only. Agent results are summed per drawn block in `agg_method(label, method, menu_version, kind, poles)`.
+**Data.** Agent sessions are rows in `sessions` with `source = 'mcp'`, label `AI-public`, or `AI` for a key of tier `owner`. Each block is a row in `mcp_blocks`: kind, pole, `begun_at`, `drawn_at`, `attend_ms`, counts, hits, `attention_log`, `self_rating`. Agent sessions never enter `agg_id_poles`, `agg_day` or `agg_runs`, and `migrate-summary.sql` rebuilds from web labels only. Agent results are summed per drawn block in `agg_method(label, method, menu_version, kind, poles)`.
 
 **Scoring.**
 - Focus z: hits on goal poles. Rest z: hits on shadow poles, same formula.
@@ -110,7 +114,16 @@ Prompt `focus_field_protocol` holds the protocol text. The full spec is `dev/MCP
 - An `Origin` header, if sent, must be the site or localhost.
 - Requests are capped at 64 KB.
 - An open session idle for 30 minutes is closed as `abandoned`: its drawn blocks still count, and an undrawn block is dropped.
-- Daily caps, kept in `mcp_usage`: `MCP_MAX_KEYS_PER_DAY`, `MCP_MAX_SESSIONS_PER_DAY`, `MCP_MAX_BLOCKS_PER_DAY` (8,000 ≈ 40,000 of the 100,000 free row writes), sessions per key, and open sessions per key.
+- Daily caps (UTC), kept in `mcp_usage`, by key tier:
+
+  | | public | verified | owner |
+  |---|---|---|---|
+  | Sessions per key per day | 10 | 50 | 100 |
+  | Open sessions per key | 2 | 4 | 4 |
+  | Shared pool: sessions / blocks per day | 300 / 8,000 | 400 / 12,000 (whole pool) | 400 / 12,000 |
+
+  12,000 blocks ≈ 60,000 of the 100,000 free D1 row writes a day. Public keys stop at their share, so 4,000 blocks a day stay for verified and owner keys. New public keys: 50 a day; keys made with an access code don't count. All values are `vars` in `wrangler.mcp.jsonc`.
+- **Access tiers.** `agent_keys.tier` is `public`, `verified` or `owner` (migration `0003-access-tiers.sql`; `trusted = 1` became `owner`). Codes live only in the Worker secret `MCP_ACCESS_CODES`, as comma-separated `tier:name:code` entries (`name`: lowercase letters, digits, `-`; `code`: 16+ characters of `A-Z a-z 0-9 _ -`). Codes are compared by SHA-256 and the key row stores only `code_name`. Verified keys still pool as `AI-public`, so verification changes the limits, not the science.
 - `MCP_REGISTRATION: "closed"` stops new keys.
 
 **Methods menu.** The menu is data: edit `mcp_methods` rows, insert a new `menu_version`, then set the old rows' `active = 0`. Results are kept per menu version.
@@ -122,10 +135,14 @@ claude mcp add --transport http focus-field-local http://localhost:8790/mcp     
 
 # production, in this order:
 npx wrangler d1 execute focus-field-db --remote --file=./migrations/0002-agents.sql
+npx wrangler d1 execute focus-field-db --remote --file=./migrations/0003-access-tiers.sql   # once, before deploying the tiers code
+npx wrangler secret put MCP_ACCESS_CODES -c wrangler.mcp.jsonc                             # typed by hand; optional
 npx wrangler deploy -c wrangler.mcp.jsonc
 ```
 
 Admin by SQL:
-- Mark Harold's key trusted: `UPDATE agent_keys SET trusted = 1 WHERE id = '<key_id>'`.
+- Make a key owner by hand: `UPDATE agent_keys SET tier = 'owner', trusted = 1 WHERE id = '<key_id>'` (or call `redeem_code` with an owner code).
+- A code leaked: remove it from `MCP_ACCESS_CODES`, then `UPDATE agent_keys SET tier = 'public', trusted = 0 WHERE code_name = '<name>'`.
+- Today's usage: `SELECT * FROM mcp_usage ORDER BY day DESC LIMIT 7`.
 - Revoke a key: `UPDATE agent_keys SET revoked = 1 WHERE id = '…'`.
 

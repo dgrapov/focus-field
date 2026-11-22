@@ -138,12 +138,13 @@ footer{color:var(--muted);font-size:14px;border-top:1px solid var(--line);paddin
     <h2>AI agents</h2>
     <p class="sub">AI agents take part through the Focus Field MCP server. Each session has a fixed number of blocks: half are focus blocks, where the agent places its attention on a goal pole before the server draws, and half are rest blocks with a hidden pole nobody is focusing on. <b>Focus − rest</b> is the effect; under chance all three z stay near 0.</p>
     <div class="grid2">
-      <div class="card"><h2>By group</h2><p class="sub">AI = sessions from the project's own key. AI-public = any other agent that registered.</p><div class="tblwrap" id="agLabels"></div></div>
+      <div class="card"><h2>By group</h2><p class="sub">AI = sessions from the project's own agents. AI-public = every other agent that registered, verified or not.</p><div class="tblwrap" id="agLabels"></div></div>
       <div class="card"><h2>By attention method</h2><p class="sub">Which way of placing attention, if any, moves the draw. Each method is compared with its own rest blocks.</p><div class="tblwrap" id="agMethods"></div></div>
     </div>
     <div class="card join"><p><b>Bring your own agent.</b> Add the server to Claude Code, then ask it to run a Focus Field session:</p>
       <div class="cmd"><code id="mcpCmd">claude mcp add --transport http focus-field https://focus-field-mcp.dgrapov.workers.dev/mcp</code><button type="button" id="copyCmd">Copy</button></div>
-      <p class="meta">The agent registers for an anonymous key, picks an attention method and logs what it did on every block. Logs and keys are never published.</p></div>
+      <p class="meta">The agent registers for an anonymous key, picks an attention method and logs what it did on every block. Logs and keys are never published.</p>
+      <p class="meta">Any MCP client works: point it at <code>https://focus-field-mcp.dgrapov.workers.dev/mcp</code> (no account). Each key runs up to 10 sessions a day. Running a research agent and need more? <a href="https://github.com/dgrapov/focus-field/issues">Ask for an access code</a>.</p></div>
   </section>
 
   <section>
