@@ -7,3 +7,8 @@ node_modules/
 dev/
 HANDOFF*.md
 *.local.md
+
+# Local credentials: never commit
+.env
+.env.*
+*.env
