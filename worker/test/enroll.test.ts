@@ -4,7 +4,7 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { handleHttp, handleRpc, type D1Database, type McpEnv } from '../src/mcp';
-import enrollWorker, { _setJwks, verifyAccess, enrollEnabled } from '../src/enroll';
+import enrollWorker, { _setJwks, _setFetch, verifyAccess, enrollEnabled, makeSession, verifySession } from '../src/enroll';
 
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const TEAM = 'https://ffteam.cloudflareaccess.com', AUD = 'aud-tag-123', ADMIN = 'owner@example.com', ORIGIN = 'https://mcp.test';
@@ -137,3 +137,91 @@ describe('/enroll page and API', () => {
 });
 
 const q = (sql: string, ...p: unknown[]) => db.prepare(sql).get(...(p as never[])) as any;
+
+describe('GitHub login', () => {
+  const GH = { GITHUB_CLIENT_ID: 'cid', GITHUB_CLIENT_SECRET: 'csecret', ENROLL_GITHUB_USERS: 'DGrapov, id:999', ENROLL_SESSION_KEY: 'k'.repeat(40) };
+  let ghUser: { login: string; id: number } | null, tokenOk: boolean, seen: { url: string; body?: string }[];
+  beforeEach(() => {
+    env = { DB: env.DB, ...GH };                                   // GitHub only, no Access
+    ghUser = { login: 'dgrapov', id: 4242 }; tokenOk = true; seen = [];
+    _setFetch((async (input: any, init?: any) => {
+      const url = String(input); seen.push({ url, body: init?.body });
+      if (url === 'https://github.com/login/oauth/access_token') return new Response(JSON.stringify(tokenOk ? { access_token: 'gho_x' } : { error: 'bad_verification_code' }), { headers: { 'content-type': 'application/json' } });
+      if (url === 'https://api.github.com/user') return ghUser ? new Response(JSON.stringify(ghUser)) : new Response('{}', { status: 401 });
+      return new Response('nope', { status: 404 });
+    }) as typeof fetch);
+  });
+  const get = (path: string, cookie = '') => enrollWorker.fetch(new Request(ORIGIN + path, { headers: cookie ? { Cookie: cookie } : {} }), env);
+  async function signIn() {
+    const r = await get('/enroll/login');
+    const state = new URL(r.headers.get('location')!).searchParams.get('state')!;
+    const stateCookie = /ff_oauth_state=([^;]+)/.exec(r.headers.get('set-cookie')!)![1];
+    return get(`/enroll/callback?code=abc&state=${state}`, `ff_oauth_state=${stateCookie}`);
+  }
+  const sessionOf = (r: Response) => /ff_enroll=([^;]+)/.exec((r.headers as any).getSetCookie().join('\n'))?.[1] ?? null;
+
+  it('shows a sign-in page, and redirects to GitHub with a state and the right callback', async () => {
+    expect(enrollEnabled(env)).toBe(true);
+    const page = await get('/enroll');
+    expect(page.status).toBe(401); expect(await page.text()).toContain('Sign in with GitHub');
+    const r = await get('/enroll/login');
+    const to = new URL(r.headers.get('location')!);
+    expect(to.origin + to.pathname).toBe('https://github.com/login/oauth/authorize');
+    expect(to.searchParams.get('client_id')).toBe('cid');
+    expect(to.searchParams.get('redirect_uri')).toBe(ORIGIN + '/enroll/callback');
+    expect(to.searchParams.get('state')!.length).toBeGreaterThan(20);
+    expect(r.headers.get('set-cookie')).toMatch(/ff_oauth_state=.*HttpOnly; Secure; SameSite=Lax/);
+  });
+
+  it('an allowed user gets a session and can use the page and API', async () => {
+    const cb = await signIn();
+    expect(cb.status).toBe(302); expect(cb.headers.get('location')).toBe(ORIGIN + '/enroll');
+    const sess = sessionOf(cb)!; expect(sess).toBeTruthy();
+    expect(seen[0].body).toContain('"client_secret":"csecret"');
+    expect((await get('/enroll', `ff_enroll=${sess}`)).status).toBe(200);
+    const st = await (await get('/enroll/api/state', `ff_enroll=${sess}`)).json() as any;
+    expect(st.you).toBe('github:dgrapov');
+    const mint = await enrollWorker.fetch(new Request(ORIGIN + '/enroll/api/code', { method: 'POST', headers: { Cookie: `ff_enroll=${sess}`, Origin: ORIGIN, 'content-type': 'application/json' }, body: JSON.stringify({ tier: 'owner' }) }), env);
+    const code = (await mint.json() as any).code; expect(code).toMatch(/^ffc_/);
+    expect(q('SELECT created_by FROM enroll_codes').created_by).toBe('github:dgrapov');
+    expect((await call('register', { access_code: code })).tier).toBe('owner');
+    // cross-site POST with a valid cookie is still refused
+    const evil = await enrollWorker.fetch(new Request(ORIGIN + '/enroll/api/code', { method: 'POST', headers: { Cookie: `ff_enroll=${sess}`, Origin: 'https://evil.example', 'content-type': 'application/json' }, body: '{"tier":"owner"}' }), env);
+    expect(evil.status).toBe(403);
+  });
+
+  it('refuses other users, a mismatched state, and a failed token exchange', async () => {
+    ghUser = { login: 'someone-else', id: 1 };
+    let r = await signIn(); expect(r.status).toBe(403); expect(await r.text()).toContain('not allowed'); expect(sessionOf(r)).toBeNull();
+    ghUser = { login: 'renamed-me', id: 999 };                    // allowed by numeric id
+    expect((await signIn()).status).toBe(302);
+    ghUser = { login: 'dgrapov', id: 4242 };
+    r = await get('/enroll/callback?code=abc&state=forged', 'ff_oauth_state=real'); expect(r.status).toBe(403);
+    r = await get('/enroll/callback?code=abc&state=x'); expect(r.status).toBe(403);
+    tokenOk = false; r = await signIn(); expect(r.status).toBe(403); expect(await r.text()).toContain('did not confirm');
+  });
+
+  it('sessions are signed, expire, and stop working if the user leaves the allow list or the key changes', async () => {
+    const t = Date.now(), s = await makeSession(env, 'dgrapov', 4242, t);
+    expect(await verifySession(env, s, t)).toBe('github:dgrapov');
+    expect(await verifySession(env, s, t + 9 * 3600_000)).toBeNull();                      // 8 h
+    const [body, sig] = s.split('.');
+    const forged = Buffer.from(JSON.stringify({ login: 'dgrapov', id: 4242, exp: t + 1e9 })).toString('base64url') + '.' + sig;
+    expect(await verifySession(env, forged, t)).toBeNull();
+    expect(await verifySession(env, body + '.AAAA', t)).toBeNull();
+    expect(await verifySession({ ...env, ENROLL_SESSION_KEY: 'z'.repeat(40) }, s, t)).toBeNull();
+    expect(await verifySession({ ...env, ENROLL_GITHUB_USERS: 'id:999' }, s, t)).toBeNull();
+    expect(await verifySession({ ...env, ENROLL_SESSION_KEY: 'short' }, s, t)).toBeNull();   // a weak key switches GitHub login off
+    const out = await get('/enroll/logout', `ff_enroll=${s}`);
+    expect(out.headers.get('set-cookie')).toContain('ff_enroll=; Path=/enroll; Max-Age=0');
+  });
+
+  it('stays off without all four GitHub secrets, and Access still works alongside it', async () => {
+    env = { DB: env.DB, ...GH, GITHUB_CLIENT_SECRET: undefined } as any;
+    expect((await get('/enroll')).status).toBe(404);
+    expect((await get('/enroll/login')).status).toBe(404);
+    env = { DB: env.DB, ...GH, ACCESS_TEAM_DOMAIN: TEAM, ACCESS_AUD: AUD, ENROLL_ADMIN_EMAILS: ADMIN };
+    const r = await enrollWorker.fetch(new Request(ORIGIN + '/enroll/api/state', { headers: { 'Cf-Access-Jwt-Assertion': await good() } }), env);
+    expect((await r.json() as any).you).toBe(ADMIN);
+  });
+});

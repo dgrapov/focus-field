@@ -1,7 +1,9 @@
 // /enroll: an OPTIONAL owner Worker (wrangler.enroll.jsonc, focus-field-enroll.dgrapov.workers.dev) on the same D1,
-// for minting access codes from anywhere. It is a separate Worker so Cloudflare Access can cover its whole hostname
-// without touching the public MCP host. It answers 404 unless ACCESS_TEAM_DOMAIN, ACCESS_AUD and ENROLL_ADMIN_EMAILS
-// (Worker secrets) are all set. Cloudflare Access
+// for minting access codes from anywhere. Two ways to sign in, each switched on by its own Worker secrets:
+//  - GitHub login (OAuth app; no card, no Zero Trust): GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, ENROLL_GITHUB_USERS,
+//    ENROLL_SESSION_KEY. The Worker checks the GitHub user against the allow list and sets a signed 8-hour cookie.
+//  - Cloudflare Access (optional alternative): ACCESS_TEAM_DOMAIN, ACCESS_AUD, ENROLL_ADMIN_EMAILS.
+// With neither configured it answers 404. For Access: Cloudflare Access
 // (Zero Trust, One-time PIN by email) sits in front of /enroll; this file re-checks Access's signed JWT on every
 // request, so a request that skipped Access (or a forged header) gets nothing. The public /mcp endpoint and its
 // limits do not change: codes only ever raise a key's tier through register(access_code) or redeem_code.
@@ -21,9 +23,20 @@ export interface EnrollEnv {
   ACCESS_TEAM_DOMAIN?: string;     // e.g. "https://<team>.cloudflareaccess.com"
   ACCESS_AUD?: string;             // the Access application's Audience (AUD) tag
   ENROLL_ADMIN_EMAILS?: string;    // comma-separated; must also be allowed by the Access policy
+  GITHUB_CLIENT_ID?: string;       // GitHub OAuth app (Settings → Developer settings → OAuth Apps)
+  GITHUB_CLIENT_SECRET?: string;
+  ENROLL_GITHUB_USERS?: string;    // comma-separated GitHub logins and/or numeric ids ("id:123456"); ids survive renames
+  ENROLL_SESSION_KEY?: string;     // 32+ random characters; signs the session cookie. Changing it signs everyone out.
 }
 
-export const enrollEnabled = (env: EnrollEnv) => !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD && env.ENROLL_ADMIN_EMAILS);
+const accessEnabled = (env: EnrollEnv) => !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD && env.ENROLL_ADMIN_EMAILS);
+export const githubEnabled = (env: EnrollEnv) =>
+  !!(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET && env.ENROLL_GITHUB_USERS && (env.ENROLL_SESSION_KEY || '').length >= 32);
+export const enrollEnabled = (env: EnrollEnv) => accessEnabled(env) || githubEnabled(env);
+
+/** Outbound HTTP (Access certs, GitHub). Tests replace it. */
+let httpFetch: typeof fetch = (input, init) => fetch(input, init);
+export function _setFetch(f: typeof fetch) { httpFetch = f; }
 
 // ---------- Cloudflare Access JWT (RS256) ----------
 type Jwk = JsonWebKey & { kid?: string };
@@ -35,7 +48,7 @@ export function _setJwks(team: string, keys: Jwk[]) { jwksCache = { team, at: Da
 const teamOf = (env: EnrollEnv) => (env.ACCESS_TEAM_DOMAIN || '').replace(/\/+$/, '');
 async function signingKeys(team: string, force = false): Promise<Jwk[]> {
   if (!force && jwksCache && jwksCache.team === team && Date.now() - jwksCache.at < JWKS_TTL_MS) return jwksCache.keys;
-  const r = await fetch(`${team}/cdn-cgi/access/certs`);
+  const r = await httpFetch(`${team}/cdn-cgi/access/certs`);
   if (!r.ok) throw new Error('access certs ' + r.status);
   const keys = ((await r.json()) as { keys?: Jwk[] }).keys || [];
   jwksCache = { team, at: Date.now(), keys };
@@ -46,7 +59,7 @@ const b64urlJson = (s: string) => JSON.parse(new TextDecoder().decode(b64urlByte
 
 /** The verified email of an Access JWT, or null. Checks signature, issuer, audience, expiry and the admin list. */
 export async function verifyAccess(env: EnrollEnv, token: string | null, now = Date.now()): Promise<string | null> {
-  if (!token || !enrollEnabled(env)) return null;
+  if (!token || !accessEnabled(env)) return null;
   const parts = token.split('.'); if (parts.length !== 3) return null;
   let header: { alg?: string; kid?: string }, claims: { iss?: string; aud?: string | string[]; exp?: number; nbf?: number; email?: string };
   try { header = b64urlJson(parts[0]); claims = b64urlJson(parts[1]); } catch { return null; }
@@ -73,6 +86,82 @@ const accessToken = (req: Request) => {
   const m = /(?:^|;\s*)CF_Authorization=([^;]+)/.exec(req.headers.get('Cookie') || ''); return m ? m[1] : null;
 };
 
+// ---------- GitHub login ----------
+const SESSION_COOKIE = 'ff_enroll', STATE_COOKIE = 'ff_oauth_state', SESSION_HOURS = 8;
+const b64url = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const hmacKey = (env: EnrollEnv) => crypto.subtle.importKey('raw', new TextEncoder().encode(env.ENROLL_SESSION_KEY!), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+const cookie = (req: Request, name: string) => { const m = new RegExp('(?:^|;\\s*)' + name + '=([^;]+)').exec(req.headers.get('Cookie') || ''); return m ? m[1] : null; };
+const setCookie = (name: string, value: string, maxAge: number) => `${name}=${value}; Path=/enroll; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+
+function githubAllowed(env: EnrollEnv, login: string, id: number) {
+  const list = (env.ENROLL_GITHUB_USERS || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+  return list.includes(login.toLowerCase()) || list.includes('id:' + id);
+}
+/** A signed session: base64url(JSON {login, id, exp}) + "." + base64url(HMAC-SHA256). */
+export async function makeSession(env: EnrollEnv, login: string, id: number, now = Date.now()) {
+  const body = b64url(new TextEncoder().encode(JSON.stringify({ login, id, exp: now + SESSION_HOURS * 3600_000 })));
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', await hmacKey(env), new TextEncoder().encode(body)));
+  return body + '.' + b64url(sig);
+}
+/** "github:<login>" for a valid, unexpired session of a user still on the allow list; else null. Constant-time check. */
+export async function verifySession(env: EnrollEnv, value: string | null, now = Date.now()): Promise<string | null> {
+  if (!value || !githubEnabled(env)) return null;
+  const [body, sig, extra] = value.split('.'); if (!body || !sig || extra !== undefined) return null;
+  try {
+    if (!(await crypto.subtle.verify('HMAC', await hmacKey(env), b64urlBytes(sig), new TextEncoder().encode(body)))) return null;
+    const c = b64urlJson(body) as { login?: string; id?: number; exp?: number };
+    if (typeof c.login !== 'string' || typeof c.id !== 'number' || typeof c.exp !== 'number' || c.exp < now) return null;
+    return githubAllowed(env, c.login, c.id) ? 'github:' + c.login : null;
+  } catch { return null; }
+}
+
+async function githubLogin(req: Request, env: EnrollEnv): Promise<Response> {
+  const url = new URL(req.url), state = b64url(crypto.getRandomValues(new Uint8Array(24)));
+  const to = new URL('https://github.com/login/oauth/authorize');
+  to.searchParams.set('client_id', env.GITHUB_CLIENT_ID!);
+  to.searchParams.set('redirect_uri', url.origin + '/enroll/callback');
+  to.searchParams.set('state', state);
+  to.searchParams.set('allow_signup', 'false');                      // no scope: only the public profile (login, id)
+  return new Response(null, { status: 302, headers: { Location: to.toString(), 'Set-Cookie': setCookie(STATE_COOKIE, state, 600), ...SEC } });
+}
+
+async function githubCallback(req: Request, env: EnrollEnv, now: Date): Promise<Response> {
+  const url = new URL(req.url), code = url.searchParams.get('code'), state = url.searchParams.get('state'), want = cookie(req, STATE_COOKIE);
+  const clearState = setCookie(STATE_COOKIE, '', 0);
+  const fail = (msg: string) => new Response(loginHtml(msg), { status: 403, headers: { 'content-type': 'text/html; charset=utf-8', 'Set-Cookie': clearState, ...SEC, 'Content-Security-Policy': LOGIN_CSP } });
+  if (!code || !state || !want || state !== want) return fail('Sign-in expired or was started elsewhere. Try again.');
+  let token: string | undefined;
+  try {
+    const t = await httpFetch('https://github.com/login/oauth/access_token', {
+      method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'focus-field-enroll' },
+      body: JSON.stringify({ client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET, code, redirect_uri: url.origin + '/enroll/callback' }),
+    });
+    token = ((await t.json()) as { access_token?: string }).access_token;
+  } catch { /* fall through */ }
+  if (!token) return fail('GitHub did not confirm the sign-in. Try again.');
+  let user: { login?: string; id?: number } = {};
+  try {
+    const u = await httpFetch('https://api.github.com/user', { headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'User-Agent': 'focus-field-enroll' } });
+    if (u.ok) user = (await u.json()) as typeof user;
+  } catch { /* fall through */ }
+  if (typeof user.login !== 'string' || typeof user.id !== 'number') return fail('Could not read your GitHub account. Try again.');
+  if (!githubAllowed(env, user.login, user.id)) return fail('This GitHub account is not allowed here.');
+  const h = new Headers({ Location: url.origin + '/enroll', ...SEC });
+  h.append('Set-Cookie', clearState);
+  h.append('Set-Cookie', setCookie(SESSION_COOKIE, await makeSession(env, user.login, user.id, now.getTime()), SESSION_HOURS * 3600));
+  return new Response(null, { status: 302, headers: h });
+}
+
+const LOGIN_CSP = "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+const escHtml = (t: string) => t.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+function loginHtml(msg = '') {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Focus Field enroll</title>
+<style>:root{color-scheme:light dark}body{margin:0;font:15px/1.5 system-ui,sans-serif;background:#fafaf7;color:#1d1d1b;display:grid;place-items:center;min-height:100vh}
+@media (prefers-color-scheme:dark){body{background:#141413;color:#ececea}}main{max-width:360px;padding:16px;text-align:center}a{display:inline-block;margin-top:12px;padding:10px 16px;border:1px solid currentColor;border-radius:8px;color:inherit;text-decoration:none}p.m{opacity:.7;font-size:13px}</style></head>
+<body><main><h1 style="font-size:20px">Focus Field: enroll agents</h1>${msg ? `<p>${escHtml(msg)}</p>` : '<p>Owner page. Sign in to make access codes.</p>'}
+<a href="/enroll/login">Sign in with GitHub</a><p class="m">Only allowed accounts get in. Public agents need nothing from this page.</p></main></body></html>`;
+}
+
 // ---------- codes stored in D1 ----------
 export const OWNER_TTL_MAX = 24 * 60, VERIFIED_TTL_MAX = 90 * 24 * 60, USES_MAX = 100;
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -95,8 +184,17 @@ const notFound = () => json({ error: 'not_found' }, 404);
 export async function handleEnroll(req: Request, env: EnrollEnv, now = new Date()): Promise<Response> {
   if (!enrollEnabled(env)) return notFound();                                     // the route is off unless configured
   const url = new URL(req.url);
-  const email = await verifyAccess(env, accessToken(req), now.getTime());
-  if (!email) return json({ error: 'forbidden: open /enroll through Cloudflare Access with an admin email' }, 403);
+  if (githubEnabled(env)) {
+    if (req.method === 'GET' && url.pathname === '/enroll/login') return githubLogin(req, env);
+    if (req.method === 'GET' && url.pathname === '/enroll/callback') return githubCallback(req, env, now);
+    if (url.pathname === '/enroll/logout') return new Response(null, { status: 302, headers: { Location: url.origin + '/enroll', 'Set-Cookie': setCookie(SESSION_COOKIE, '', 0), ...SEC } });
+  }
+  const email = (await verifySession(env, cookie(req, SESSION_COOKIE), now.getTime())) ?? (await verifyAccess(env, accessToken(req), now.getTime()));
+  if (!email) {
+    if (githubEnabled(env) && req.method === 'GET' && url.pathname === '/enroll')
+      return new Response(loginHtml(), { status: 401, headers: { 'content-type': 'text/html; charset=utf-8', ...SEC, 'Content-Security-Policy': LOGIN_CSP } });
+    return json({ error: 'forbidden: sign in on /enroll first' }, 403);
+  }
 
   if (req.method === 'GET' && url.pathname === '/enroll') return page();
   if (req.method === 'GET' && url.pathname === '/enroll/api/state') return json(await state(env, email));
@@ -158,7 +256,7 @@ label{display:flex;flex-direction:column;font-size:13px;color:var(--mut)}input,s
 button{cursor:pointer;border-color:var(--acc);color:var(--acc)}#out{margin-top:10px;padding:10px;border:1px dashed var(--acc);border-radius:6px;display:none;word-break:break-all}
 code{font:13px ui-monospace,monospace}.tw{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 </style></head><body><main>
-<h1>Focus Field: enroll agents</h1><p class="mut">Signed in as <b id="you">…</b>. Codes are shown once; only their hash is stored. Public agents are unaffected.</p>
+<h1>Focus Field: enroll agents</h1><p class="mut">Signed in as <b id="you">…</b> (<a href="/enroll/logout">sign out</a>). Codes are shown once; only their hash is stored. Public agents are unaffected.</p>
 <h2>New access code</h2><fieldset>
 <label>Tier<select id="tier"><option value="owner">owner (label AI)</option><option value="verified">verified (AI-public, higher limits)</option></select></label>
 <label>Name<input id="name" placeholder="laptop, lab-a" maxlength="32"></label>

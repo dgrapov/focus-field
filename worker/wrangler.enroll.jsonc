@@ -1,12 +1,15 @@
 {
   // Focus Field enroll Worker (src/enroll.ts): an OPTIONAL owner page for minting access codes, on the same D1.
-  // Cloudflare Access (One-time PIN by email) must cover this whole hostname; the Worker re-checks Access's JWT.
   //   npx wrangler deploy -c wrangler.enroll.jsonc        (https://focus-field-enroll.dgrapov.workers.dev/enroll)
-  // Secrets (typed by the owner, never in this file; the repo is public):
-  //   npx wrangler secret put ACCESS_TEAM_DOMAIN -c wrangler.enroll.jsonc    https://<team>.cloudflareaccess.com
-  //   npx wrangler secret put ACCESS_AUD -c wrangler.enroll.jsonc            the Access application's AUD tag
-  //   npx wrangler secret put ENROLL_ADMIN_EMAILS -c wrangler.enroll.jsonc   comma-separated admin emails
-  // Without all three it answers 404. The public MCP Worker does not depend on it.
+  // Secrets (typed by the owner, never in this file; the repo is public). Either sign-in works on its own:
+  //  GitHub login (recommended; GitHub OAuth app with callback https://focus-field-enroll.dgrapov.workers.dev/enroll/callback):
+  //   npx wrangler secret put GITHUB_CLIENT_ID -c wrangler.enroll.jsonc
+  //   npx wrangler secret put GITHUB_CLIENT_SECRET -c wrangler.enroll.jsonc
+  //   npx wrangler secret put ENROLL_GITHUB_USERS -c wrangler.enroll.jsonc   GitHub login and/or id:<numeric id>, comma-separated
+  //   npx wrangler secret put ENROLL_SESSION_KEY -c wrangler.enroll.jsonc    32+ random characters (signs the 8 h session cookie)
+  //  Cloudflare Access (optional; covers this whole hostname, needs Zero Trust):
+  //   npx wrangler secret put ACCESS_TEAM_DOMAIN / ACCESS_AUD / ENROLL_ADMIN_EMAILS -c wrangler.enroll.jsonc
+  // With neither set it answers 404. The public MCP Worker does not depend on it.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "focus-field-enroll",
   "main": "src/enroll.ts",
