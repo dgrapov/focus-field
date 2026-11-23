@@ -15,8 +15,9 @@ import {
   TOOLS, PROMPTS, PROTOCOL_PROMPT, SERVER_INSTRUCTIONS, REST_INSTRUCTION, negotiateVersion, drawBlock, shuffleSchedule,
   uniform, zOf, diffZ, labelFor, newKey, hashKey, KEY_RE, checkAgent, checkStart, checkSessionId, checkBlockId, checkLog,
   checkReflection, checkRating, IDLE_MINUTES, DRAWS_PER_BLOCK, type Kind, type Rand, cryptoRand,
-  parseAccessCodes, matchCode, higherTier, type Tier, type AccessCode,
+  parseAccessCodes, matchCode, higherTier, suggestSession, type Tier, type AccessCode,
 } from './mcp-core';
+import { spendEnrollCode } from './enroll';
 
 // Minimal binding types (as in index.ts), so tests can pass an adapter over node:sqlite.
 export interface D1Prepared { bind(...v: unknown[]): D1Prepared; run(): Promise<{ meta?: { changes?: number } }>; all<T>(): Promise<{ results: T[] }>; first<T>(): Promise<T | null> }
@@ -92,7 +93,15 @@ async function accessCodes(env: McpEnv): Promise<AccessCode[]> {
   if (!codesMemo || codesMemo.secret !== secret) codesMemo = { secret, codes: (await parseAccessCodes(secret)).codes };
   return codesMemo.codes;
 }
-const BAD_CODE = 'access_code: not recognised. Leave it out to use the public limits.';
+const BAD_CODE = 'access_code: not recognised (or used up, or expired). Leave it out to use the public limits.';
+const ENROLL_CODE_RE = /^ffc_[0-9a-f]{32}$/;
+/** An access code from the MCP_ACCESS_CODES secret, or a one-time/expiring code minted on /enroll (spends one use). */
+async function resolveCode(env: McpEnv, code: unknown, now: Date): Promise<{ tier: Exclude<Tier, 'public'>; name: string } | null> {
+  const fromSecret = await matchCode(await accessCodes(env), code);
+  if (fromSecret) return fromSecret;
+  if (typeof code === 'string' && ENROLL_CODE_RE.test(code.trim())) return spendEnrollCode(env.DB, code, now);
+  return null;
+}
 
 interface Key { id: string; trusted: boolean; tier: Tier; agent: string | null }
 async function auth(env: McpEnv, key: unknown): Promise<Key> {
@@ -158,7 +167,7 @@ async function register(env: McpEnv, a: Obj, now: Date): Promise<Obj> {
   if ((env.MCP_REGISTRATION || 'open') === 'closed') throw new ToolError('register: new keys are not being issued right now');
   const agent = checkAgent(a.agent); if (!agent.ok) throw new ToolError(agent.error);
   const hasCode = a.access_code !== undefined && a.access_code !== null && a.access_code !== '';
-  const code = hasCode ? await matchCode(await accessCodes(env), a.access_code) : null;
+  const code = hasCode ? await resolveCode(env, a.access_code, now) : null;
   if (hasCode && !code) throw new ToolError(BAD_CODE);
   const day = today(now);
   if (!code && (await usage(env, day)).keys >= cap(env, 'MCP_MAX_KEYS_PER_DAY')) throw new ToolError('register: the daily limit for new keys is reached; try again tomorrow (UTC)');
@@ -169,15 +178,36 @@ async function register(env: McpEnv, a: Obj, now: Date): Promise<Obj> {
   return { key, key_id: id, tier, limits: limitsFor(env, tier), note: 'Keep this key and pass it as "key" to the other tools. It is shown only once and cannot be recovered. Next: get_methods.' };
 }
 
-async function redeemCode(env: McpEnv, a: Obj): Promise<Obj> {
+async function redeemCode(env: McpEnv, a: Obj, now: Date): Promise<Obj> {
   const k = await auth(env, a.key);
-  const code = await matchCode(await accessCodes(env), a.access_code);
+  const code = await resolveCode(env, a.access_code, now);
   if (!code) throw new ToolError(BAD_CODE);
   const tier = higherTier(k.tier, code.tier);
   await env.DB.prepare(SQL.SET_TIER).bind(k.id, tier, code.name, tier === 'owner' ? 1 : 0).run();
   return {
     key_id: k.id, tier, limits: limitsFor(env, tier),
     note: tier === 'owner' ? 'Sessions you start from now on are labelled AI; earlier sessions keep their label.' : 'Higher daily limits apply from now on. Your results still pool as AI-public.',
+  };
+}
+
+async function suggest(env: McpEnv, a: Obj, now: Date): Promise<Obj> {
+  const k = await auth(env, a.key);
+  const day = today(now), lim = limitsFor(env, k.tier), u = await usage(env, day);
+  const load = (await env.DB.prepare(SQL.KEY_LOAD).bind(k.id, day + 'T00:00:00.000Z').first<{ today: number; open: number }>()) || { today: 0, open: 0 };
+  const menu = (await env.DB.prepare(SQL.METHODS).all<{ menu_version: string; id: string; name: string }>()).results;
+  const agg = await methodRows(env);
+  const methods = menu.map(m => {
+    const rows = agg.filter(r => r.method === m.id && r.menu_version === m.menu_version && r.kind === 'focus' && Number(r.poles) === 2);
+    return { id: m.id, name: m.name, focus_draws: rows.reduce((t, r) => t + Number(r.n), 0), sessions: rows.reduce((t, r) => t + Number(r.sessions), 0) };
+  });
+  const pub = k.tier === 'public';
+  const poolLeft = Math.min(lim.blocks_total - u.blocks, pub ? lim.blocks_public - u.public_blocks : Infinity);
+  const sug = suggestSession({ tier: k.tier, methods, sessions_left: lim.sessions_per_key - Number(load.today), open_now: Number(load.open), open_max: lim.open_per_key, pool_blocks_left: Math.max(0, poolLeft) });
+  return {
+    ...sug,
+    ...(sug.can_start ? { start_session: { method: sug.method, blocks: sug.blocks, poles: sug.poles } } : {}),
+    tier: k.tier,
+    note: 'A suggestion, not a rule: any method works, and a person may name one. Pick before you start and keep it for the whole session.',
   };
 }
 
@@ -367,7 +397,8 @@ export async function handleRpc(msg: RpcReq, env: McpEnv, now = new Date(), rand
       try {
         let out: Obj;
         if (name === 'register') out = await register(env, args, now);
-        else if (name === 'redeem_code') out = await redeemCode(env, args);
+        else if (name === 'redeem_code') out = await redeemCode(env, args, now);
+        else if (name === 'suggest_session') out = await suggest(env, args, now);
         else if (name === 'get_limits') out = await getLimits(env, args, now);
         else if (name === 'get_methods') out = await getMethods(env, args);
         else if (name === 'start_session') out = await startSession(env, args, now, rand);

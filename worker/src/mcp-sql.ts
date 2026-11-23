@@ -74,3 +74,24 @@ export const READ_METHODS_AGG = `SELECT label, method, menu_version, kind, poles
 
 export const READ_WEB_TOTALS = `SELECT body FROM snapshots WHERE key = 'totals'`;
 export const GET_METHOD = `SELECT name, instruction FROM mcp_methods WHERE menu_version = ?1 AND id = ?2`;
+
+// ---------- /enroll (codes minted behind Cloudflare Access) ----------
+/** ?1 id, ?2 code hash, ?3 tier, ?4 name, ?5 created_by, ?6 now, ?7 expires_at, ?8 uses */
+export const INSERT_ENROLL_CODE =
+  `INSERT INTO enroll_codes (id, code_hash, tier, name, created_by, created_at, expires_at, uses_left) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`;
+/** Spend one use of a live code, atomically. ?1 code hash, ?2 now. changes = 1 means it was valid. */
+export const SPEND_ENROLL_CODE =
+  `UPDATE enroll_codes SET uses_left = uses_left - 1 WHERE code_hash = ?1 AND revoked = 0 AND uses_left > 0 AND expires_at > ?2`;
+export const GET_ENROLL_CODE = `SELECT tier, name FROM enroll_codes WHERE code_hash = ?1`;
+export const LIST_ENROLL_CODES =
+  `SELECT id, tier, name, created_by, created_at, expires_at, uses_left, revoked FROM enroll_codes ORDER BY created_at DESC LIMIT 100`;
+export const REVOKE_ENROLL_CODE = `UPDATE enroll_codes SET revoked = 1 WHERE id = ?1`;
+export const LIST_KEYS =
+  `SELECT k.id, k.agent, k.tier, k.code_name, k.created_at, k.revoked,
+          COUNT(s.id) AS sessions, MAX(s.updated_at) AS last_active
+     FROM agent_keys k LEFT JOIN sessions s ON s.key_id = k.id
+    GROUP BY k.id ORDER BY COALESCE(MAX(s.updated_at), k.created_at) DESC LIMIT 200`;
+/** ?1 key id, ?2 revoked (0/1) */
+export const SET_KEY_REVOKED = `UPDATE agent_keys SET revoked = ?2 WHERE id = ?1`;
+/** /enroll tier change; keeps code_name. ?1 key id, ?2 tier, ?3 trusted (1 = owner) */
+export const SET_TIER_ONLY = `UPDATE agent_keys SET tier = ?2, trusted = ?3 WHERE id = ?1`;

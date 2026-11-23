@@ -94,6 +94,17 @@ CREATE TABLE IF NOT EXISTS mcp_usage (  -- daily counters for the global caps (U
   public_sessions INTEGER NOT NULL DEFAULT 0,   -- 0003: the part of sessions/blocks from public-tier keys
   public_blocks INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS enroll_codes (  -- 0003: one-time / expiring access codes minted on /enroll (behind Cloudflare Access)
+  id TEXT PRIMARY KEY,                 -- short random id, shown on /enroll for revoking
+  code_hash TEXT NOT NULL UNIQUE,      -- SHA-256 hex of the code; the code itself is shown once and never stored
+  tier TEXT NOT NULL CHECK (tier IN ('verified','owner')),
+  name TEXT NOT NULL,                  -- becomes agent_keys.code_name for keys that redeem it
+  created_by TEXT NOT NULL,            -- the Access-verified email that minted it
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  uses_left INTEGER NOT NULL CHECK (uses_left >= 0),
+  revoked INTEGER NOT NULL DEFAULT 0
+);
 CREATE INDEX IF NOT EXISTS idx_sessions_key ON sessions(key_id, status);
 INSERT OR IGNORE INTO mcp_methods (menu_version, id, name, instruction, sort) VALUES
   ('2026-11-12.1', 'intent', 'Clear intention', 'In one sentence, state that the outcome has already happened: the goal pole has won this block. Hold that statement as true, then draw.', 1),

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   drawBlock, shuffleSchedule, uniform, zOf, diffZ, labelFor, newKey, hashKey, KEY_RE, checkStart, checkLog, checkRating,
   checkReflection, checkAgent, checkSessionId, checkBlockId, negotiateVersion, TOOLS, PROMPTS, PROTOCOL_PROMPT, DRAWS_PER_BLOCK, type Rand,
-  parseAccessCodes, matchCode, higherTier } from '../src/mcp-core';
+  parseAccessCodes, matchCode, higherTier, suggestSession, drawsFor } from '../src/mcp-core';
 import { chiSquareSf } from '../src/stats';
 
 const IDS = ['intent', 'sustain', 'visualize', 'mantra', 'feel', 'stillness', 'custom'];
@@ -89,6 +89,25 @@ describe('scoring', () => {
     expect(higherTier('public', 'verified')).toBe('verified');
   });
 
+  it('suggests the method with the least data, blocks that fit today, and says when it cannot', () => {
+    expect(drawsFor(0.005)).toBe(61827);
+    const methods = [
+      { id: 'intent', name: 'Clear intention', focus_draws: 19000, sessions: 3 },
+      { id: 'mantra', name: 'Mantra', focus_draws: 10000, sessions: 1 },
+      { id: 'feel', name: 'Felt expectation', focus_draws: 10000, sessions: 1 },
+      { id: 'custom', name: 'Your own method', focus_draws: 0, sessions: 0 },
+    ];
+    const base = { tier: 'public' as const, methods, sessions_left: 10, open_now: 0, open_max: 2, pool_blocks_left: 8000 };
+    const s = suggestSession(base);
+    expect(s).toMatchObject({ can_start: true, method: 'mantra', blocks: 20, poles: 2 });   // least data, first in menu order on a tie; never custom
+    expect(s.power).toEqual({ target_hit_rate: 0.505, focus_draws_needed: 61827, method_focus_draws: 10000, sessions_to_target: 6 });
+    expect(suggestSession({ ...base, tier: 'owner' }).blocks).toBe(40);
+    expect(suggestSession({ ...base, pool_blocks_left: 15 }).blocks).toBe(14);               // capped, even
+    expect(suggestSession({ ...base, pool_blocks_left: 9 })).toMatchObject({ can_start: false });
+    expect(suggestSession({ ...base, sessions_left: 0 }).why.join(' ')).toContain('used up');
+    expect(suggestSession({ ...base, open_now: 2 }).why.join(' ')).toContain('finish one first');
+  });
+
   it('labels trusted keys AI and the rest AI-public', () => {
     expect(labelFor(true)).toBe('AI');
     expect(labelFor(false)).toBe('AI-public');
@@ -151,7 +170,7 @@ describe('MCP surface', () => {
   });
 
   it('lists the protocol tools in flow order, with object schemas', () => {
-    expect(TOOLS.map(t => t.name)).toEqual(['register', 'get_methods', 'start_session', 'begin_block', 'draw_block', 'finish_session', 'get_totals', 'redeem_code', 'get_limits']);
+    expect(TOOLS.map(t => t.name)).toEqual(['register', 'get_methods', 'start_session', 'begin_block', 'draw_block', 'finish_session', 'get_totals', 'suggest_session', 'redeem_code', 'get_limits']);
     for (const t of TOOLS) expect(t.inputSchema.type).toBe('object');
     const draw = TOOLS.find(t => t.name === 'draw_block')!;
     expect(draw.inputSchema.required).toEqual(['key', 'session_id', 'block_id', 'attention_log']);

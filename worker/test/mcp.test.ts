@@ -78,7 +78,7 @@ describe('migration 0002', () => {
   it('gives the same tables as a fresh schema.sql, with the methods menu v1', () => {
     const fresh = new DatabaseSync(':memory:'); fresh.exec(schema);
     const cols = (d: DatabaseSync, t: string) => (d.prepare(`PRAGMA table_info(${t})`).all() as any[]).map(c => `${c.name}:${c.type}:${c.notnull}:${c.dflt_value}:${c.pk}`);
-    for (const t of ['sessions', 'agent_keys', 'mcp_blocks', 'mcp_methods', 'agg_method', 'mcp_usage', 'agg_day', 'agg_id_poles', 'agg_runs', 'snapshots']) expect(cols(db, t)).toEqual(cols(fresh, t));
+    for (const t of ['sessions', 'agent_keys', 'mcp_blocks', 'mcp_methods', 'agg_method', 'mcp_usage', 'enroll_codes', 'agg_day', 'agg_id_poles', 'agg_runs', 'snapshots']) expect(cols(db, t)).toEqual(cols(fresh, t));
     expect((db.prepare('SELECT id FROM mcp_methods ORDER BY sort').all() as any[]).map(r => r.id)).toEqual(['intent', 'sustain', 'visualize', 'mantra', 'feel', 'stillness', 'custom']);
     expect(q("SELECT DISTINCT menu_version AS v FROM mcp_methods").v).toBe('2026-11-12.1');
     expect(q("SELECT instruction FROM mcp_methods WHERE id = 'mantra'").instruction).toContain("goal pole's name 21 times");
@@ -99,9 +99,9 @@ describe('protocol', () => {
     expect(j.result).toMatchObject({ protocolVersion: '2025-06-18', capabilities: { tools: {}, prompts: {} } });
     expect(j.result.instructions).toContain('begin_block');
     expect((await post({ jsonrpc: '2.0', method: 'notifications/initialized' })).status).toBe(202);
-    expect(((await (await post({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).json()) as any).result.tools).toHaveLength(9);
+    expect(((await (await post({ jsonrpc: '2.0', id: 2, method: 'tools/list' })).json()) as any).result.tools).toHaveLength(10);
     const pr = ((await (await post({ jsonrpc: '2.0', id: 3, method: 'prompts/get', params: { name: 'focus_field_protocol' } })).json()) as any).result;
-    expect(pr.messages[0].content.text).toContain('Call get_methods()');
+    expect(pr.messages[0].content.text).toContain('Call suggest_session()');
     expect(await (await post([{ jsonrpc: '2.0', id: 4, method: 'ping' }, { jsonrpc: '2.0', method: 'notifications/initialized' }])).json()).toEqual([{ jsonrpc: '2.0', id: 4, result: {} }]);
   });
 
@@ -307,6 +307,18 @@ describe('keys, caps, idle', () => {
     expect(q('SELECT sessions, blocks, public_sessions, public_blocks FROM mcp_usage')).toEqual({ sessions: 2, blocks: 2, public_sessions: 1, public_blocks: 1 });
     const lim = await call('get_limits', { key: pub.key }, tight);
     expect(lim).toMatchObject({ tier: 'public', this_key: { sessions_today: 1, sessions_per_day: 10 }, shared_pool: { blocks_used: 1, blocks_max: 1 } });
+  });
+
+  it('suggest_session follows the data: least-sampled method first, then start_session with it', async () => {
+    const reg = await call('register', {});
+    const first = await call('suggest_session', { key: reg.key });
+    expect(first).toMatchObject({ can_start: true, method: 'intent', blocks: 20, poles: 2, start_session: { method: 'intent', blocks: 20, poles: 2 } });
+    const s = await call('start_session', { key: reg.key, ...first.start_session });
+    await block(reg.key, s.session_id); await block(reg.key, s.session_id); await block(reg.key, s.session_id);
+    await call('finish_session', { key: reg.key, session_id: s.session_id });
+    const next = await call('suggest_session', { key: reg.key });
+    if (q("SELECT COUNT(*) c FROM agg_method WHERE method='intent' AND kind='focus'").c) expect(next.method).not.toBe('intent');
+    expect(next.why.join(' ')).toContain('least data');
   });
 
   it('can close registration', async () => {

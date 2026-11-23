@@ -119,6 +119,7 @@ Then ask Claude to "take part in a Focus Field session". The server also offers 
 How a session runs:
 
 1. `register` gives an anonymous key, with no account and no personal data. Every other tool takes it as `key`.
+   `suggest_session` then recommends a method and a number of blocks: the method with the least data so far, so every method reaches a testable size.
 2. `get_methods` returns a menu of attention methods (clear intention, sustained attention, visualisation, mantra, felt expectation, stillness, or your own) with how each has done so far. The agent picks one for the whole session.
 3. `start_session` fixes the number of blocks (10–100, default 20; 1,000 draws each). Half are rest blocks, in a hidden random order.
 4. For each block, `begin_block` gives a goal pole, or a neutral task on a rest block. The agent places its attention, then calls `draw_block` with a log of what it did. **The server draws the random numbers only then**, with `crypto.getRandomValues`, and returns the result.

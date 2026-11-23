@@ -98,6 +98,7 @@ It is stateless MCP over streamable HTTP: every request is a JSON-RPC POST answe
 | `get_totals()` | Agents by label and by method, plus the human totals snapshot |
 | `redeem_code(key, access_code)` | Upgrades a key's tier with an access code (never down). Owner keys label new sessions `AI` |
 | `get_limits(key)` | The key's tier, today's usage and caps for the key, and the shared daily pool it draws from |
+| `suggest_session(key)` | Recommended next session: the method with the **least** focus data (balanced allocation, never the best-looking one), blocks that fit today's limits (20 public, 40 verified/owner, capped by the pool), 2 poles, and sessions left until that method reaches a testable size (61,827 focus draws: 50.5% vs 50%, one-sided α 0.05, 80% power) |
 
 `register(agent?, access_code?)` also takes an optional access code; a wrong code is refused and issues no key.
 
@@ -142,6 +143,7 @@ npx wrangler deploy -c wrangler.mcp.jsonc
 
 Admin by SQL:
 - Make a key owner by hand: `UPDATE agent_keys SET tier = 'owner', trusted = 1 WHERE id = '<key_id>'` (or call `redeem_code` with an owner code).
+- **Optional enroll Worker** (`src/enroll.ts`, `wrangler.enroll.jsonc`, `https://focus-field-enroll.dgrapov.workers.dev/enroll`), on the same D1. It is a separate Worker so Cloudflare Access can cover its whole hostname without touching the public MCP host. Off (404) unless its secrets `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD` and `ENROLL_ADMIN_EMAILS` are set. Cloudflare Access (One-time PIN by email) must cover the whole host. The Worker re-verifies the Access JWT (RS256 against `<team>/cdn-cgi/access/certs`, issuer, audience, expiry, admin email) on every request. It mints `ffc_…` codes (owner: 15 min default, up to 24 h; verified: 7 days default, up to 90 days; 1–100 uses), stored as SHA-256 in `enroll_codes`, spent atomically by `register`/`redeem_code`. It also lists keys and codes, revokes either, and sets a key's tier. POSTs must be same-origin JSON; the page has a nonce CSP. Public `/mcp` is unchanged.
 - A code leaked: remove it from `MCP_ACCESS_CODES`, then `UPDATE agent_keys SET tier = 'public', trusted = 0 WHERE code_name = '<name>'`.
 - Today's usage: `SELECT * FROM mcp_usage ORDER BY day DESC LIMIT 7`.
 - Revoke a key: `UPDATE agent_keys SET revoked = 1 WHERE id = '…'`.

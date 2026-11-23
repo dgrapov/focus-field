@@ -22,6 +22,7 @@
     // Public keys may use only the PUBLIC share of the pools; the rest stays for keys with an access code.
     // Access codes are a secret, never a var:  npx wrangler secret put MCP_ACCESS_CODES -c wrangler.mcp.jsonc
     //   value: "owner:<name>:<code>,verified:<name>:<code>"  (code: 16+ chars of A-Z a-z 0-9 _ -)
+    // One-time codes can also be minted on the optional enroll Worker (wrangler.enroll.jsonc, behind Cloudflare Access).
     "MCP_MAX_KEYS_PER_DAY": "50",
     "MCP_MAX_SESSIONS_PER_DAY": "400",
     "MCP_MAX_PUBLIC_SESSIONS_PER_DAY": "300",

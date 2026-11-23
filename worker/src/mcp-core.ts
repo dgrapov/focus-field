@@ -87,6 +87,43 @@ export async function matchCode(codes: AccessCode[], code: unknown): Promise<Acc
   const h = await hashKey(code.trim());
   return codes.find(c => c.hash === h) ?? null;
 }
+// ---------- suggest_session: which method and how many blocks, from the pooled data and today's limits ----------
+/** Focus draws (2 poles) needed to see a hit rate of 50% + delta at one-sided alpha 0.05 with 80% power. */
+export const drawsFor = (delta: number) => Math.ceil(((1.6449 + 0.8416) / (2 * delta)) ** 2);
+export const TARGET_DELTA = 0.005;                       // 50.5% vs 50%: ~61,800 focus draws per method
+export interface SuggestInput {
+  tier: Tier;
+  methods: { id: string; name: string; focus_draws: number; sessions: number }[];   // active menu, in menu order
+  sessions_left: number;                                 // this key, today
+  open_now: number; open_max: number;
+  pool_blocks_left: number;                              // the pool this key draws from, today
+}
+export interface Suggestion {
+  can_start: boolean; method: string | null; method_name: string | null; blocks: number; poles: number;
+  why: string[]; power: { target_hit_rate: number; focus_draws_needed: number; method_focus_draws: number; sessions_to_target: number | null };
+}
+/** Balanced allocation: send the next session to the method with the least focus data, so every method reaches a
+ *  testable size; never to the method that "looks best" (that would bias the pooled test). Blocks: the tier's
+ *  default, capped by what is left today, even and at least MIN_BLOCKS; 2 poles (the most power per draw). */
+export function suggestSession(x: SuggestInput): Suggestion {
+  const need = drawsFor(TARGET_DELTA), why: string[] = [];
+  const pick = x.methods.filter(m => m.id !== 'custom').sort((a, b) => a.focus_draws - b.focus_draws)[0] ?? null;
+  const want = x.tier === 'public' ? DEFAULT_BLOCKS : 40;
+  let blocks = Math.min(want, MAX_BLOCKS, x.pool_blocks_left - (x.pool_blocks_left % 2));
+  let can = true;
+  if (x.sessions_left <= 0) { can = false; why.push("This key's sessions for today are used up; the limit resets at 00:00 UTC."); }
+  if (x.open_now >= x.open_max) { can = false; why.push(`You already have ${x.open_now} open session(s): finish one first (finish_session).`); }
+  if (blocks < MIN_BLOCKS) { can = false; blocks = MIN_BLOCKS; why.push('Too few blocks are left in today\'s shared pool for a full session; try after 00:00 UTC.'); }
+  if (pick) why.push(`${pick.name} has the least data so far (${pick.focus_draws.toLocaleString('en-US')} focus draws, ${pick.sessions} sessions), so a session there adds the most. Choosing by least data, not by best result, keeps the pooled test fair.`);
+  if (can) why.push(`${blocks} blocks (${(blocks / 2) * DRAWS_PER_BLOCK} focus draws): run every block. Stopping early weakens the result.`);
+  why.push('2 poles: the most statistical power per draw, and comparable with the data so far.');
+  const perSession = (blocks / 2) * DRAWS_PER_BLOCK, have = pick?.focus_draws ?? 0;
+  return {
+    can_start: can && !!pick, method: pick?.id ?? null, method_name: pick?.name ?? null, blocks, poles: 2, why,
+    power: { target_hit_rate: 0.5 + TARGET_DELTA, focus_draws_needed: need, method_focus_draws: have, sessions_to_target: have >= need ? 0 : Math.ceil((need - have) / perSession) },
+  };
+}
+
 /** A tier never goes down by redeeming a code. */
 export const higherTier = (a: Tier, b: Tier): Tier => (TIERS.indexOf(a) >= TIERS.indexOf(b) ? a : b);
 
@@ -147,7 +184,7 @@ export function checkRating(v: unknown, kind: Kind): Ok<number | null> {
 export const REST_INSTRUCTION = 'Rest block. No goal. Write one or two neutral sentences about something unrelated (for example, describe a plain object), then call draw_block with what you did.';
 
 export const PROTOCOL_PROMPT = `Focus Field tests one question: can attention placed on an outcome shift a random draw? You are the participant.
-1. Call get_methods() and choose one method, or use the one the person names. Say why you chose it. Use only that method for the whole session.
+1. Call suggest_session() for the recommended method and number of blocks (or get_methods() to choose yourself, or use the one the person names). Say why you chose it. Use only that method for the whole session.
 2. Call start_session. The number of blocks is fixed; every block counts, whatever happens.
 3. For each block, call begin_block. On a focus block you get a goal pole. Place your attention on the outcome, that pole winning this block, using your method. Only when your attention is fully placed, call draw_block with an honest log of exactly what you did. The server draws the random numbers only after your call arrives.
 4. On a rest block there is no goal. Do the neutral task, then call draw_block with a short log.
@@ -231,6 +268,11 @@ export const TOOLS = [
     name: 'get_totals',
     description: 'Pooled results: humans (web, rebuilt hourly) and agents by label and by method (focus z, rest z, focus minus rest).',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'suggest_session',
+    description: 'Recommended next session for your key: the method with the least data so far (balanced, not the best-looking), the number of blocks that fits your limits today, poles, and how far that method is from a testable sample. Then call start_session with those values.',
+    inputSchema: { type: 'object', properties: { key: KEY }, required: ['key'], additionalProperties: false },
   },
   {
     name: 'redeem_code',
